@@ -7,7 +7,14 @@ const PUBLIC_PATHS = ['/login', '/signup', '/reset-password'];
 // pending 사용자가 접근 가능한 경로
 const PENDING_PATHS = ['/pending'];
 
-// master 전용 경로
+// master 전용 경로 (sub_master 접근 불가)
+const MASTER_ONLY_PATHS = [
+  '/master/categories',
+  '/master/positions',
+  '/master/settlements',
+];
+
+// master + sub_master 접근 가능 경로
 const MASTER_PATHS = ['/master'];
 
 // accountant 이상 전용 경로
@@ -109,14 +116,21 @@ export async function middleware(request: NextRequest) {
   // 역할 기반 접근 제어
   const role = profile.role;
 
-  // master 전용 경로
-  if (MASTER_PATHS.some((p) => pathname.startsWith(p))) {
+  // master 전용 경로 (sub_master 차단)
+  if (MASTER_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     if (role !== 'master') {
       return NextResponse.redirect(new URL('/', request.url));
     }
   }
 
-  // accountant 이상 전용 경로
+  // master + sub_master 경로 (/master/users 포함)
+  if (MASTER_PATHS.some((p) => pathname.startsWith(p))) {
+    if (role !== 'master' && role !== 'sub_master') {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+  }
+
+  // accountant 이상 전용 경로 (sub_master/auditor 차단)
   if (ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     if (role !== 'master' && role !== 'accountant') {
       return NextResponse.redirect(new URL('/', request.url));

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@/hooks/useUser';
 import { useHotkey } from '@/hooks/useShortcutKey';
 import { useToast } from '@/components/ui/Toast';
@@ -53,6 +53,8 @@ type SortDir = 'asc' | 'desc';
 export default function LedgerPage() {
   const { user } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ledgerIdParam = searchParams.get('ledgerId');
   const toast = useToast();
   // Data
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -169,7 +171,8 @@ export default function LedgerPage() {
       const activeLedgers = (json.data as Ledger[]).filter((l) => l.is_active);
       setLedgers(activeLedgers);
       if (activeLedgers.length > 0 && !selectedLedgerId) {
-        setSelectedLedgerId(activeLedgers[0].id);
+        const target = ledgerIdParam && activeLedgers.find((l) => l.id === ledgerIdParam);
+        setSelectedLedgerId(target ? target.id : activeLedgers[0].id);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '장부 목록을 불러올 수 없습니다');
@@ -236,15 +239,36 @@ export default function LedgerPage() {
   // Client-side sort
   const sortedEntries = [...entries].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1;
+    const amount = (e: typeof a) => e.income || e.expense;
     switch (sortField) {
       case 'date':
-        return (a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at)) * dir;
+        return (
+          a.date.localeCompare(b.date) ||
+          a.description.localeCompare(b.description) ||
+          (amount(a) - amount(b)) ||
+          (a.category?.name || '').localeCompare(b.category?.name || '')
+        ) * dir;
       case 'income':
-        return (a.income - b.income) * dir;
+        return (
+          (a.income - b.income) ||
+          a.date.localeCompare(b.date) ||
+          a.description.localeCompare(b.description) ||
+          (a.category?.name || '').localeCompare(b.category?.name || '')
+        ) * dir;
       case 'expense':
-        return (a.expense - b.expense) * dir;
+        return (
+          (a.expense - b.expense) ||
+          a.date.localeCompare(b.date) ||
+          a.description.localeCompare(b.description) ||
+          (a.category?.name || '').localeCompare(b.category?.name || '')
+        ) * dir;
       case 'category':
-        return ((a.category?.name || '').localeCompare(b.category?.name || '')) * dir;
+        return (
+          (a.category?.name || '').localeCompare(b.category?.name || '') ||
+          a.date.localeCompare(b.date) ||
+          a.description.localeCompare(b.description) ||
+          (amount(a) - amount(b))
+        ) * dir;
       default:
         return 0;
     }

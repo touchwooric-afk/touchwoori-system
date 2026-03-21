@@ -43,8 +43,15 @@ function getNavGroups(role: Role): NavGroup[] {
     items: [{ label: '대시보드', href: '/', icon: LayoutDashboard }],
   });
 
-  // Master 관리
-  if (role === 'master') {
+  const isMaster     = role === 'master';
+  const isSubMaster  = role === 'sub_master';
+  const isAccountant = role === 'accountant';
+  const isAuditor    = role === 'auditor';
+  const isTeacher    = role === 'teacher';
+  const canWrite     = isMaster || isAccountant; // 재정 쓰기 권한
+
+  // 시스템 관리
+  if (isMaster) {
     groups.push({
       title: '시스템 관리',
       items: [
@@ -56,28 +63,43 @@ function getNavGroups(role: Role): NavGroup[] {
     });
   }
 
-  // 영수증
-  groups.push({
-    title: '영수증',
-    items: [
-      { label: '영수증 제출', href: '/receipts/upload', icon: Upload },
-      { label: '내 제출 내역', href: '/receipts/my', icon: ClipboardList },
-      ...(role === 'master' || role === 'accountant'
-        ? [
-            { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList },
-            { label: '직접 입력', href: '/receipts/new', icon: PlusCircle },
-          ]
-        : []),
-    ],
-  });
+  // 운영 (sub_master: 사용자 관리만)
+  if (isSubMaster) {
+    groups.push({
+      title: '운영',
+      items: [
+        { label: '사용자 관리', href: '/master/users', icon: Users },
+      ],
+    });
+  }
 
-  // 장부
+  // 영수증 (auditor/sub_master는 제출/승인 메뉴 없음)
+  if (!isAuditor && !isSubMaster) {
+    groups.push({
+      title: '영수증',
+      items: [
+        { label: '영수증 제출', href: '/receipts/upload', icon: Upload },
+        { label: '내 제출 내역', href: '/receipts/my', icon: ClipboardList },
+        ...(canWrite
+          ? [
+              { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList },
+              { label: '직접 입력', href: '/receipts/new', icon: PlusCircle },
+            ]
+          : []),
+      ],
+    });
+  }
+
+  // 회계장부
   groups.push({
-    title: '장부',
+    title: '회계장부',
     items: [
-      { label: '장부 조회', href: '/ledger', icon: BookOpen },
-      ...(role === 'master' || role === 'accountant'
-        ? [{ label: '장부 관리', href: '/ledger/manage', icon: BookOpen }]
+      { label: '회계장부 조회', href: '/ledger', icon: BookOpen },
+      ...(canWrite
+        ? [
+            { label: '회계장부 관리', href: '/ledger/manage', icon: BookOpen },
+            { label: '엑셀 내보내기', href: '/excel/export', icon: FileSpreadsheet },
+          ]
         : []),
     ],
   });
@@ -87,10 +109,7 @@ function getNavGroups(role: Role): NavGroup[] {
     title: '결산',
     items: [
       { label: '결산 PDF', href: '/settlements', icon: FileText },
-      { label: '결산 이력', href: '/settlements/history', icon: History },
-      ...(role === 'master' || role === 'accountant'
-        ? [{ label: '엑셀 내보내기', href: '/excel/export', icon: FileSpreadsheet }]
-        : []),
+      { label: '감사 내역', href: '/settlements/history', icon: History },
     ],
   });
 

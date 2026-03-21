@@ -31,3 +31,4 @@ ON CONFLICT (name) DO NOTHING;
 -- INSERT INTO ledgers (department_id, name, type, created_by)
 -- VALUES ('고등부', '전체회기', 'main', '<MASTER_USER_UUID>');
 -- ============================================
+

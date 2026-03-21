@@ -1,7 +1,7 @@
 // ============================================
 // 역할 및 상태 타입
 // ============================================
-export type Role = 'master' | 'accountant' | 'teacher';
+export type Role = 'master' | 'sub_master' | 'accountant' | 'auditor' | 'teacher';
 export type UserStatus = 'pending' | 'active' | 'inactive';
 export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
 export type LedgerType = 'main' | 'special';
@@ -81,6 +81,8 @@ export interface Settlement {
   start_date: string;
   end_date: string;
   memo: string | null;
+  audit_file_url: string | null;
+  audit_note: string | null;
   created_by: string;
   created_at: string;
 }

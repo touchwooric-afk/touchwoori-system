@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master') {
-      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    if (profile.role !== 'master' && profile.role !== 'sub_master') {
+      return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -81,8 +81,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master') {
-      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    if (profile.role !== 'master' && profile.role !== 'sub_master') {
+      return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -90,6 +90,27 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: '사용자 ID가 필요합니다' }, { status: 400 });
+    }
+
+    // sub_master는 master/sub_master 계정 수정 불가
+    if (profile.role === 'sub_master') {
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', id)
+        .single();
+      if (targetUser && (targetUser.role === 'master' || targetUser.role === 'sub_master')) {
+        return NextResponse.json({ error: '마스터 계정은 수정할 수 없습니다' }, { status: 403 });
+      }
+      // sub_master가 부여 가능한 role: teacher, accountant, auditor
+      if (role !== undefined && !['teacher', 'accountant', 'auditor'].includes(role)) {
+        return NextResponse.json({ error: '부여할 수 없는 권한입니다' }, { status: 403 });
+      }
+    }
+
+    // master도 자기 자신의 master role은 변경 불가 (보호)
+    if (profile.role === 'master' && id === profile.id && role !== undefined && role !== 'master') {
+      return NextResponse.json({ error: '자신의 마스터 권한은 변경할 수 없습니다' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};

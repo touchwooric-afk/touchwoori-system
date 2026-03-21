@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/Toast';
+import { useUser } from '@/hooks/useUser';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
@@ -11,7 +12,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import Pagination from '@/components/ui/Pagination';
 import { formatRole, formatDate } from '@/lib/format';
-import { Users, UserCheck, UserX } from 'lucide-react';
+import { Users, UserCheck, UserX, Shield, Eye } from 'lucide-react';
 import type { User, UserStatus, Role } from '@/types';
 
 type TabFilter = 'all' | UserStatus;
@@ -27,6 +28,8 @@ const PAGE_SIZE = 10;
 
 export default function UsersPage() {
   const toast = useToast();
+  const { user: currentUser } = useUser();
+  const isMaster = currentUser?.role === 'master';
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabFilter>('all');
@@ -245,6 +248,7 @@ export default function UsersPage() {
                           <Button
                             size="sm"
                             variant="danger"
+                            disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
                             onClick={() =>
                               setConfirmDialog({ open: true, user: u, action: 'deactivate' })
                             }
@@ -310,47 +314,35 @@ export default function UsersPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 역할 선택 <span className="text-danger-600">*</span>
               </label>
-              <div className="flex gap-3">
-                <label
-                  className={`
-                    flex-1 flex items-center justify-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
-                    ${selectedRole === 'teacher'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                    }
-                  `}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value="teacher"
-                    checked={selectedRole === 'teacher'}
-                    onChange={() => setSelectedRole('teacher')}
-                    className="sr-only"
-                  />
-                  <UserCheck className="h-4 w-4" />
-                  <span className="text-sm font-medium">교사</span>
-                </label>
-                <label
-                  className={`
-                    flex-1 flex items-center justify-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
-                    ${selectedRole === 'accountant'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                    }
-                  `}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value="accountant"
-                    checked={selectedRole === 'accountant'}
-                    onChange={() => setSelectedRole('accountant')}
-                    className="sr-only"
-                  />
-                  <UserX className="h-4 w-4" />
-                  <span className="text-sm font-medium">회계 교사</span>
-                </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'teacher',    label: '교사',      icon: UserCheck, masterOnly: false },
+                  { value: 'accountant', label: '회계 교사', icon: UserX,     masterOnly: false },
+                  { value: 'auditor',    label: '교육위원장', icon: Eye,      masterOnly: false },
+                  { value: 'sub_master', label: '교육목사',  icon: Shield,   masterOnly: true  },
+                ].filter((opt) => !opt.masterOnly || isMaster).map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`
+                      flex items-center justify-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
+                      ${selectedRole === opt.value
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      }
+                    `}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={opt.value}
+                      checked={selectedRole === opt.value}
+                      onChange={() => setSelectedRole(opt.value as Role)}
+                      className="sr-only"
+                    />
+                    <opt.icon className="h-4 w-4" />
+                    <span className="text-sm font-medium">{opt.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
 

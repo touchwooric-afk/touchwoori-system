@@ -27,7 +27,7 @@ interface Candidate {
 }
 
 type MatchMode  = 'link' | 'new';
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'failed' | 'error';
 
 interface ReceiptRow {
   localId: string;
@@ -285,17 +285,51 @@ export default function ReceiptUploadPage() {
     }
   }, [isTeacher, teacherLedgerId, selectedLedgerId, user, toast]);
 
+  // ── 유효성 검사 (전체 저장용) ──────────────────────────────────
+  const validateRow = (row: ReceiptRow): string | null => {
+    if (!row.date) return '날짜를 입력해주세요';
+    if (!parseAmountInput(row.amount)) return '금액을 입력해주세요';
+    if (!row.description.trim()) return '항목명을 입력해주세요';
+    if (!row.categoryId) return '카테고리를 선택해주세요';
+    if (row.matchMode === 'link' && !row.selectedCandidateId) return '장부 항목을 선택하거나 새 항목으로 변경해주세요';
+    return null;
+  };
+
   // ── 전체 저장 ──────────────────────────────────────────────────
   const handleSaveAll = async () => {
-    const pending = rows.filter((r) => r.saveStatus === 'idle' || r.saveStatus === 'failed');
+    const pending = rows.filter((r) => r.saveStatus !== 'saved' && r.saveStatus !== 'saving');
     if (pending.length === 0) { toast.error('저장할 항목이 없습니다'); return; }
+
+    // 먼저 유효성 검사 — 문제 있는 행은 error 상태로 보류
+    const validRows: ReceiptRow[] = [];
+    let errorCount = 0;
+    for (const row of pending) {
+      const err = validateRow(row);
+      if (err) {
+        updateRow(row.localId, { saveStatus: 'error', errorMsg: err });
+        errorCount++;
+      } else {
+        validRows.push(row);
+      }
+    }
+
+    if (validRows.length === 0) {
+      toast.error(`${errorCount}건에 문제가 있습니다. 내용을 확인하고 다시 시도해주세요`);
+      return;
+    }
+
     setSavingAll(true);
     let success = 0;
-    for (const row of pending) {
+    for (const row of validRows) {
       if (await saveRow(row)) success++;
     }
     setSavingAll(false);
-    if (success > 0) toast.success(`${success}건의 영수증이 저장되었습니다`);
+    if (success > 0) {
+      const msg = errorCount > 0
+        ? `${success}건 저장 완료 (${errorCount}건 보류 — 내용 확인 필요)`
+        : `${success}건의 영수증이 저장되었습니다`;
+      toast.success(msg);
+    }
   };
 
   const removeRow = (localId: string) => {
@@ -306,7 +340,8 @@ export default function ReceiptUploadPage() {
     });
   };
 
-  const pendingCount = rows.filter((r) => r.saveStatus === 'idle' || r.saveStatus === 'failed').length;
+  const pendingCount = rows.filter((r) => r.saveStatus === 'idle' || r.saveStatus === 'failed' || r.saveStatus === 'error').length;
+  const errorCount    = rows.filter((r) => r.saveStatus === 'error').length;
   const savedCount   = rows.filter((r) => r.saveStatus === 'saved').length;
 
   return (
@@ -401,6 +436,7 @@ export default function ReceiptUploadPage() {
               <span>총 {rows.length}건</span>
               {savedCount  > 0 && <span className="text-emerald-600">✓ 저장 {savedCount}건</span>}
               {pendingCount > 0 && <span className="text-amber-600">대기 {pendingCount}건</span>}
+              {errorCount  > 0 && <span className="text-rose-600">⚠ 보류 {errorCount}건</span>}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -522,9 +558,10 @@ interface RowProps {
 function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandidates, onPreview, onRemove, onSave }: RowProps) {
   const isSaved  = row.saveStatus === 'saved';
   const isSaving = row.saveStatus === 'saving';
+  const isError  = row.saveStatus === 'error';
 
   return (
-    <tr className={`${isSaved ? 'opacity-50 bg-gray-50' : 'hover:bg-gray-50'} transition-colors`}>
+    <tr className={`${isSaved ? 'opacity-50 bg-gray-50' : isError ? 'bg-rose-50 hover:bg-rose-100' : 'hover:bg-gray-50'} transition-colors`}>
       {/* 썸네일 */}
       <td className="px-3 py-2">
         <button onClick={onPreview} className="relative group block">
@@ -546,7 +583,7 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
       <td className="px-3 py-2">
         <input
           type="date" value={row.date} disabled={isSaved}
-          onChange={(e) => onUpdate({ date: e.target.value })}
+          onChange={(e) => onUpdate({ date: e.target.value, saveStatus: 'idle', errorMsg: undefined })}
           className="w-full rounded border border-gray-300 px-2 py-1 text-xs
             focus:ring-1 focus:ring-primary-500 outline-none disabled:bg-gray-50"
         />
@@ -559,7 +596,7 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
           placeholder="0"
           onChange={(e) => {
             const v = formatAmountInput(e.target.value);
-            onUpdate({ amount: v });
+            onUpdate({ amount: v, saveStatus: row.saveStatus === 'error' ? 'idle' : row.saveStatus, errorMsg: undefined });
             onRefreshCandidates(row.description, v);
           }}
           className="w-full rounded border border-gray-300 px-2 py-1 text-xs text-right tabular-nums
@@ -571,7 +608,7 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
       <td className="px-3 py-2">
         <select
           value={row.categoryId} disabled={isSaved}
-          onChange={(e) => onUpdate({ categoryId: e.target.value })}
+          onChange={(e) => onUpdate({ categoryId: e.target.value, saveStatus: 'idle', errorMsg: undefined })}
           className="w-full rounded border border-gray-300 px-1.5 py-1 text-xs
             focus:ring-1 focus:ring-primary-500 outline-none disabled:bg-gray-50"
         >
@@ -595,7 +632,7 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
           type="text" value={row.description} disabled={isSaved}
           placeholder="항목명"
           onChange={(e) => {
-            onUpdate({ description: e.target.value });
+            onUpdate({ description: e.target.value, saveStatus: 'idle', errorMsg: undefined });
             onRefreshCandidates(e.target.value, row.amount);
           }}
           className="w-full rounded border border-gray-300 px-2 py-1 text-xs
@@ -678,6 +715,14 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
       <td className="px-3 py-2 text-center">
         {isSaved   ? <CheckCircle className="h-5 w-5 text-emerald-500 mx-auto" /> :
          isSaving  ? <Loader2 className="h-5 w-5 text-primary-500 animate-spin mx-auto" /> :
+         isError ? (
+           <div className="flex flex-col items-center gap-0.5">
+             <button onClick={onSave} title="직접 저장 시도">
+               <AlertCircle className="h-5 w-5 text-rose-500 mx-auto" />
+             </button>
+             <span className="text-[9px] text-rose-400 text-center leading-tight max-w-[60px]">{row.errorMsg}</span>
+           </div>
+         ) :
          row.saveStatus === 'failed' ? (
            <button onClick={onSave} title="다시 시도">
              <AlertCircle className="h-5 w-5 text-red-500 mx-auto" />

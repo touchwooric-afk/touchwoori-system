@@ -197,7 +197,7 @@ export default function LedgerManagePage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => router.push('/ledger')}
+                    onClick={() => router.push(`/ledger?ledgerId=${ledger.id}`)}
                   >
                     <BookOpen className="h-3.5 w-3.5" />
                     조회
