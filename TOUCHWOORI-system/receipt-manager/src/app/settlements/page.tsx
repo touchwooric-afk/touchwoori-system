@@ -10,7 +10,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { CardSkeleton } from '@/components/ui/Skeleton';
 import { formatCurrency, formatDateShort, today } from '@/lib/format';
 import { FileText, Download, Eye, FileX } from 'lucide-react';
-import type { Ledger, Settlement } from '@/types';
+import type { Ledger } from '@/types';
 
 // 전반기(12월~4월) / 후반기(5월~11월) 날짜 계산
 function getHalfYearPresets() {
@@ -24,15 +24,32 @@ function getHalfYearPresets() {
   };
 }
 
-interface PdfItem {
+// 특정 연/월의 1일~말일 계산
+function getMonthRange(year: number, month: number) {
+  const lastDay = new Date(year, month, 0).getDate();
+  const mm = String(month).padStart(2, '0');
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+interface IncomeItem {
   date: string;
   description: string;
-  expense: number;
+  amount: number;
+  categoryName: string;
+}
+
+interface ExpenseItem {
+  date: string;
+  description: string;
+  amount: number;
   categoryName: string;
   imageUrl: string | null;
 }
 
-interface PdfSummary {
+interface CatSummary {
   category: string;
   total: number;
 }
@@ -40,15 +57,20 @@ interface PdfSummary {
 interface PdfData {
   title: string;
   period: { startDate: string; endDate: string };
-  summary: PdfSummary[];
-  items: PdfItem[];
+  carryoverBalance: number;
+  totalIncome: number;
+  totalExpense: number;
+  endingBalance: number;
+  incomeSummary: CatSummary[];
+  expenseSummary: CatSummary[];
+  incomeItems: IncomeItem[];
+  expenseItems: ExpenseItem[];
 }
 
 export default function SettlementsPage() {
   const { user } = useUser();
   const toast = useToast();
 
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(true);
   const toastRef = useRef(toast);
@@ -69,23 +91,21 @@ export default function SettlementsPage() {
   const [endDate, setEndDate] = useState(defaultPreset.end);
   const [selectedLedger, setSelectedLedger] = useState('');
 
+  // 월별 결산용 연/월 state (기본: 이번 달)
+  const [monthlyYear, setMonthlyYear] = useState(new Date().getFullYear());
+  const [monthlyMonth, setMonthlyMonth] = useState(new Date().getMonth() + 1);
+
   // PDF data
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
 
-  // Fetch settlements and ledgers (toast를 ref로 참조해 의존성 제거)
+  // Fetch ledgers
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [settRes, ledgerRes] = await Promise.all([
-        fetch('/api/settlements'),
-        fetch('/api/ledgers'),
-      ]);
-      const settJson = await settRes.json();
+      const ledgerRes = await fetch('/api/ledgers');
       const ledgerJson = await ledgerRes.json();
-
-      if (settRes.ok) setSettlements(settJson.data || []);
       if (ledgerRes.ok) {
         const active = (ledgerJson.data as Ledger[]).filter((l) => l.is_active);
         setLedgers(active);
@@ -101,41 +121,26 @@ export default function SettlementsPage() {
     fetchData();
   }, [fetchData]);
 
-  // URL params 최초 1회만 적용 (history 페이지에서 리다이렉트 시)
-  const urlParamsApplied = useRef(false);
-  useEffect(() => {
-    if (urlParamsApplied.current || settlements.length === 0) return;
-    const params = new URLSearchParams(window.location.search);
-    const sId = params.get('settlement');
-    if (sId) {
-      urlParamsApplied.current = true;
-      setSelectedSettlement(sId);
-      const s = settlements.find((s) => s.id === sId);
-      if (s) {
-        if (s.start_date) setStartDate(s.start_date);
-        if (s.end_date) setEndDate(s.end_date);
-      }
-    }
-  }, [settlements]);
-
   // When settlement changes, set dates
   const handleSettlementChange = (id: string) => {
     setSelectedSettlement(id);
     setPdfData(null);
     const { firstHalf, secondHalf } = getHalfYearPresets();
-    if (id === '__first_half__') {
+    if (id === '__monthly__') {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth() + 1;
+      setMonthlyYear(y);
+      setMonthlyMonth(m);
+      const range = getMonthRange(y, m);
+      setStartDate(range.start);
+      setEndDate(range.end);
+    } else if (id === '__first_half__') {
       setStartDate(firstHalf.start);
       setEndDate(firstHalf.end);
     } else if (id === '__second_half__') {
       setStartDate(secondHalf.start);
       setEndDate(secondHalf.end);
-    } else if (id) {
-      const s = settlements.find((s) => s.id === id);
-      if (s) {
-        // null/빈값인 경우 기존 날짜 유지 (절대 빈 문자열로 덮어쓰지 않음)
-        if (s.start_date) setStartDate(s.start_date);
-        if (s.end_date) setEndDate(s.end_date);
-      }
     }
     // "직접 입력" 선택 시 기존 날짜 유지 (의도적으로 아무것도 안 함)
   };
@@ -146,12 +151,9 @@ export default function SettlementsPage() {
     if (startDate && endDate) return { start: startDate, end: endDate };
     // 2. state가 비었으면 selectedSettlement에서 복원 시도
     const { firstHalf, secondHalf } = getHalfYearPresets();
+    if (selectedSettlement === '__monthly__') { const r = getMonthRange(monthlyYear, monthlyMonth); return { start: r.start, end: r.end }; }
     if (selectedSettlement === '__first_half__') return { start: firstHalf.start, end: firstHalf.end };
     if (selectedSettlement === '__second_half__') return { start: secondHalf.start, end: secondHalf.end };
-    if (selectedSettlement) {
-      const s = settlements.find((s) => s.id === selectedSettlement);
-      if (s?.start_date && s?.end_date) return { start: s.start_date, end: s.end_date };
-    }
     return null;
   };
 
@@ -172,8 +174,6 @@ export default function SettlementsPage() {
     try {
       const body: Record<string, string> = { startDate: dates.start, endDate: dates.end };
       if (selectedLedger) body.ledgerId = selectedLedger;
-      const selected = settlements.find((s) => s.id === selectedSettlement);
-      if (selected) body.title = selected.title;
 
       const res = await fetch('/api/pdf', {
         method: 'POST',
@@ -190,18 +190,20 @@ export default function SettlementsPage() {
     }
   };
 
-  // 이미지를 canvas로 로드하여 EXIF 방향 자동 보정 + dataURL 변환
+  // 이미지를 canvas로 로드하여 EXIF 방향 자동 보정 + 리사이즈 + dataURL 변환
   const normalizeImage = (url: string): Promise<string> => {
+    const MAX_PX = 1200; // 200dpi 인쇄 품질 기준 최대 해상도
     return new Promise((resolve) => {
       const img = new window.Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        const ratio = Math.min(MAX_PX / img.naturalWidth, MAX_PX / img.naturalHeight, 1);
+        canvas.width = Math.round(img.naturalWidth * ratio);
+        canvas.height = Math.round(img.naturalHeight * ratio);
         const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
       };
       img.onerror = () => resolve(url); // 실패 시 원본 URL 그대로
       img.src = url;
@@ -210,11 +212,11 @@ export default function SettlementsPage() {
 
   // PDF download
   const handleDownload = async () => {
-    if (!pdfData || pdfData.items.length === 0) return;
+    if (!pdfData || (pdfData.expenseItems.length === 0 && pdfData.incomeItems.length === 0)) return;
     setDownloadLoading(true);
     try {
       // 이미지 EXIF 방향 보정을 위한 전처리
-      const imageUrls = pdfData.items.map((item) => item.imageUrl).filter(Boolean) as string[];
+      const imageUrls = pdfData.expenseItems.map((item) => item.imageUrl).filter(Boolean) as string[];
       const normalizedMap = new Map<string, string>();
       if (imageUrls.length > 0) {
         const results = await Promise.all(imageUrls.map(async (url) => {
@@ -288,41 +290,21 @@ export default function SettlementsPage() {
         cellNoImgTxt: { fontSize: 8, color: '#ccc' },
       });
 
-      const totalExpense = pdfData.summary.reduce((s, c) => s + c.total, 0);
-
-      // ── 1페이지 요약표 높이 계산 → 남는 공간에 영수증 행 배치 ──
-      // summaryPage padding: 48 * 2 = 96pt
-      const PAGE_H = 842;
-      const SUMMARY_PAD = 48;
-      const usableH = PAGE_H - SUMMARY_PAD * 2; // 746pt
-      const titleH   = 18 + 6;   // fontSize 18 + marginBottom 6
-      const periodH  = 10 + 28;  // fontSize 10 + marginBottom 28
-      const sectionH = 11 + 8;   // fontSize 11 + marginBottom 8
-      const rowH     = 10 + 10;  // paddingVertical 5 * 2 + fontSize ~10
-      const totalRowH = 12 + 6 + 2; // paddingVertical 6*2 + borderTop + marginTop
-      const summaryContentH = titleH + periodH + sectionH + (pdfData.summary.length * rowH) + totalRowH;
-      const remainingH = usableH - summaryContentH - 20; // 20pt 여백
-
-      // 남은 공간에 몇 행(각 행 = 셀 높이 + gap)이 들어가는지 계산
-      const firstPageRows = Math.floor((remainingH + ROW_GAP) / (CELL_H + ROW_GAP));
-      const firstPageItems = Math.min(firstPageRows * 2, pdfData.items.length); // 행당 2개
-
-      // 나머지 항목은 4개씩 페이지 분할
-      const remainingItems = pdfData.items.slice(firstPageItems);
-      const receiptPages: PdfItem[][] = [];
-      for (let i = 0; i < remainingItems.length; i += 4) {
-        receiptPages.push(remainingItems.slice(i, i + 4));
+      // ── 영수증 이미지 페이지 분할 ──
+      const receiptPages: ExpenseItem[][] = [];
+      for (let i = 0; i < pdfData.expenseItems.length; i += 4) {
+        receiptPages.push(pdfData.expenseItems.slice(i, i + 4));
       }
       const totalPages = 1 + receiptPages.length;
 
-      const renderCell = (item: PdfItem, i: number) => {
+      const renderCell = (item: ExpenseItem, i: number) => {
         const imgSrc = item.imageUrl ? (normalizedMap.get(item.imageUrl) || item.imageUrl) : null;
         return (
           <View key={i} style={styles.cell}>
             <View style={styles.cellHeader}>
               <Text style={styles.cellDesc}>{item.description}</Text>
               <Text style={styles.cellMeta}>{item.date} · {item.categoryName}</Text>
-              <Text style={styles.cellAmount}>{item.expense.toLocaleString('ko-KR')}원</Text>
+              <Text style={styles.cellAmount}>{item.amount.toLocaleString('ko-KR')}원</Text>
             </View>
             {imgSrc ? (
               <Image src={imgSrc} style={styles.cellImage} />
@@ -335,49 +317,68 @@ export default function SettlementsPage() {
         );
       };
 
-      // 1페이지에 넣을 영수증 행 분할
-      const firstPageSlices: PdfItem[][] = [];
-      for (let i = 0; i < firstPageItems; i += 2) {
-        firstPageSlices.push(pdfData.items.slice(i, i + 2));
-      }
+      // 요약표 행 스타일 헬퍼
+      const summaryRow = (label: string, value: number, color = '#444') => (
+        <View style={styles.tableRow}>
+          <Text style={styles.tableCell}>{label}</Text>
+          <Text style={{ ...styles.tableCellR, color }}>{value.toLocaleString('ko-KR')} 원</Text>
+        </View>
+      );
 
       const PdfDoc = (
         <Document>
-          {/* ── 1페이지: 합계표 + 남는 공간에 영수증 ── */}
+          {/* ── 1페이지: 결산 요약표 ── */}
           <Page size="A4" style={styles.summaryPage} wrap={false}>
             <Text style={styles.title}>{pdfData.title}</Text>
             <Text style={styles.period}>
               {pdfData.period.startDate} ~ {pdfData.period.endDate}
             </Text>
-            <Text style={styles.sectionTitle}>카테고리별 지출 합계</Text>
-            {pdfData.summary.map((s, i) => (
-              <View key={i} style={styles.tableRow}>
+
+            {/* 수입부 (이월 잔액 포함) */}
+            <Text style={styles.sectionTitle}>수입부</Text>
+            <View style={{ ...styles.tableRow, backgroundColor: '#eff6ff' }}>
+              <Text style={{ ...styles.tableCell, color: '#1e40af' }}>이월 잔액</Text>
+              <Text style={{ ...styles.tableCellR, color: '#1e3a8a', fontWeight: 'bold' }}>{pdfData.carryoverBalance.toLocaleString('ko-KR')} 원</Text>
+            </View>
+            {pdfData.incomeSummary.map((s, i) => (
+              <View key={`inc-${i}`} style={{ ...styles.tableRow, borderBottomColor: '#bbf7d0' }}>
                 <Text style={styles.tableCell}>{s.category}</Text>
-                <Text style={styles.tableCellR}>{s.total.toLocaleString('ko-KR')} 원</Text>
+                <Text style={{ ...styles.tableCellR, color: '#166534' }}>{s.total.toLocaleString('ko-KR')} 원</Text>
               </View>
             ))}
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>합계</Text>
-              <Text style={styles.totalValue}>{totalExpense.toLocaleString('ko-KR')} 원</Text>
+            <View style={{ ...styles.totalRow, borderTopColor: '#16a34a' }}>
+              <Text style={styles.totalLabel}>수입부 합계</Text>
+              <Text style={{ ...styles.totalValue, color: '#166534' }}>{(pdfData.carryoverBalance + pdfData.totalIncome).toLocaleString('ko-KR')} 원</Text>
+            </View>
+            <View style={{ height: 16 }} />
+
+            {/* 지출부 */}
+            <Text style={{ ...styles.sectionTitle, color: '#be123c' }}>지출부</Text>
+            {pdfData.expenseSummary.map((s, i) => (
+              <View key={`exp-${i}`} style={{ ...styles.tableRow, borderBottomColor: '#fecdd3' }}>
+                <Text style={styles.tableCell}>{s.category}</Text>
+                <Text style={{ ...styles.tableCellR, color: '#be123c' }}>{s.total.toLocaleString('ko-KR')} 원</Text>
+              </View>
+            ))}
+            <View style={{ ...styles.totalRow, borderTopColor: '#be123c' }}>
+              <Text style={styles.totalLabel}>지출부 합계</Text>
+              <Text style={{ ...styles.totalValue, color: '#be123c' }}>{pdfData.totalExpense.toLocaleString('ko-KR')} 원</Text>
             </View>
 
-            {/* 남는 공간에 영수증 배치 */}
-            {firstPageSlices.length > 0 && (
-              <View style={{ marginTop: 16 }}>
-                {firstPageSlices.map((rowItems, ri) => (
-                  <View key={ri}>
-                    {ri > 0 && <View style={styles.rowGap} />}
-                    <View style={styles.row}>
-                      {rowItems.map((item, i) => renderCell(item, i))}
-                    </View>
-                  </View>
-                ))}
+            {/* 결산 총계 */}
+            <View style={{ marginTop: 20, borderTopWidth: 2, borderTopColor: '#9ca3af', paddingTop: 10 }}>
+              {summaryRow('수입부 합계', pdfData.carryoverBalance + pdfData.totalIncome, '#166534')}
+              {summaryRow('지출부 합계', pdfData.totalExpense, '#be123c')}
+              <View style={{ ...styles.totalRow, borderTopWidth: 2, borderTopColor: '#6b7280', marginTop: 4, paddingTop: 8 }}>
+                <Text style={{ ...styles.totalLabel, fontSize: 13 }}>기말 잔액</Text>
+                <Text style={{ ...styles.totalValue, fontSize: 13 }}>{pdfData.endingBalance.toLocaleString('ko-KR')} 원</Text>
               </View>
-            )}
+            </View>
+
             <Text style={styles.pageNum}>1 / {totalPages}</Text>
           </Page>
 
-          {/* ── 2페이지~: 영수증 2×2 명시적 행 배치 ── */}
+          {/* ── 2페이지~: 영수증 2×2 ── */}
           {receiptPages.map((pageItems, pi) => (
             <Page key={pi} size="A4" style={styles.receiptPage} wrap={false}>
               {/* 첫 번째 행 */}
@@ -449,6 +450,7 @@ export default function SettlementsPage() {
                   outline-none transition-shadow"
               >
                 <option value="">직접 입력</option>
+                <option value="__monthly__">월별 결산</option>
                 {(() => {
                   const { firstHalf, secondHalf } = getHalfYearPresets();
                   return (
@@ -462,16 +464,54 @@ export default function SettlementsPage() {
                     </>
                   );
                 })()}
-                {settlements.length > 0 && (
-                  <option disabled>── 결산기 ──</option>
-                )}
-                {settlements.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title} ({formatDateShort(s.start_date)} ~ {formatDateShort(s.end_date)})
-                  </option>
-                ))}
               </select>
             </div>
+
+            {/* 월별 결산 — 연/월 선택 */}
+            {selectedSettlement === '__monthly__' && (
+              <div className="flex items-center gap-3">
+                <select
+                  value={monthlyYear}
+                  onChange={(e) => {
+                    const y = Number(e.target.value);
+                    setMonthlyYear(y);
+                    const range = getMonthRange(y, monthlyMonth);
+                    setStartDate(range.start);
+                    setEndDate(range.end);
+                    setPdfData(null);
+                  }}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm
+                    focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+                    outline-none transition-shadow"
+                >
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                    <option key={y} value={y}>{y}년</option>
+                  ))}
+                </select>
+                <div className="flex gap-1 flex-wrap">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setMonthlyMonth(m);
+                        const range = getMonthRange(monthlyYear, m);
+                        setStartDate(range.start);
+                        setEndDate(range.end);
+                        setPdfData(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                        ${m === monthlyMonth
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                    >
+                      {m}월
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Date range */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -516,7 +556,7 @@ export default function SettlementsPage() {
                 <Eye className="h-4 w-4" />
                 PDF 미리보기
               </Button>
-              {pdfData && pdfData.items.length > 0 && (
+              {pdfData && (pdfData.expenseItems.length > 0 || pdfData.incomeItems.length > 0) && (
                 <Button
                   variant="secondary"
                   onClick={handleDownload}
@@ -533,10 +573,10 @@ export default function SettlementsPage() {
         {/* Preview */}
         {pdfData && (
           <div className="space-y-4">
-            {pdfData.items.length === 0 ? (
+            {pdfData.expenseItems.length === 0 && pdfData.incomeItems.length === 0 ? (
               <EmptyState
                 icon={FileX}
-                title="해당 기간에 지출 항목이 없습니다"
+                title="해당 기간에 항목이 없습니다"
                 description="다른 기간을 선택해주세요"
               />
             ) : (
@@ -549,78 +589,111 @@ export default function SettlementsPage() {
                     {formatDateShort(pdfData.period.endDate)}
                   </p>
 
-                  <div className="border rounded-lg overflow-hidden">
+                  {/* 수입 테이블 (이월 잔액 포함) */}
+                  <div className="border border-green-200 rounded-lg overflow-hidden mb-4">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">
-                            카테고리
-                          </th>
-                          <th className="px-4 py-2 text-right font-medium text-gray-600">
-                            합계
-                          </th>
+                        <tr className="bg-green-50 border-b border-green-200">
+                          <th className="px-4 py-2 text-left font-medium text-green-700">수입부</th>
+                          <th className="px-4 py-2 text-right font-medium text-green-700">금액</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {pdfData.summary.map((s, i) => (
+                      <tbody className="divide-y divide-green-100">
+                        <tr className="bg-blue-50/50">
+                          <td className="px-4 py-2 text-blue-800 font-medium">이월 잔액</td>
+                          <td className="px-4 py-2 text-right font-medium tabular-nums text-blue-800">{formatCurrency(pdfData.carryoverBalance)}</td>
+                        </tr>
+                        {pdfData.incomeSummary.map((s, i) => (
                           <tr key={i}>
                             <td className="px-4 py-2 text-gray-900">{s.category}</td>
-                            <td className="px-4 py-2 text-right font-medium tabular-nums text-gray-900">
-                              {formatCurrency(s.total)}
-                            </td>
+                            <td className="px-4 py-2 text-right font-medium tabular-nums text-green-700">{formatCurrency(s.total)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-gray-50 border-t-2 border-gray-300">
-                          <td className="px-4 py-2 font-bold text-gray-900">합계</td>
-                          <td className="px-4 py-2 text-right font-bold tabular-nums text-gray-900">
-                            {formatCurrency(
-                              pdfData.summary.reduce((sum, s) => sum + s.total, 0)
-                            )}
-                          </td>
+                        <tr className="bg-green-50 border-t-2 border-green-300">
+                          <td className="px-4 py-2 font-bold text-green-800">수입부 합계</td>
+                          <td className="px-4 py-2 text-right font-bold tabular-nums text-green-800">{formatCurrency(pdfData.carryoverBalance + pdfData.totalIncome)}</td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
+
+                  {/* 지출 테이블 */}
+                  <div className="border border-rose-200 rounded-lg overflow-hidden mb-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-rose-50 border-b border-rose-200">
+                          <th className="px-4 py-2 text-left font-medium text-rose-700">지출부</th>
+                          <th className="px-4 py-2 text-right font-medium text-rose-700">합계</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-rose-100">
+                        {pdfData.expenseSummary.map((s, i) => (
+                          <tr key={i}>
+                            <td className="px-4 py-2 text-gray-900">{s.category}</td>
+                            <td className="px-4 py-2 text-right font-medium tabular-nums text-rose-700">{formatCurrency(s.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-rose-50 border-t-2 border-rose-300">
+                          <td className="px-4 py-2 font-bold text-rose-800">지출부 합계</td>
+                          <td className="px-4 py-2 text-right font-bold tabular-nums text-rose-800">{formatCurrency(pdfData.totalExpense)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* 결산 총계 */}
+                  <div className="border-2 border-gray-300 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <tr className="border-b border-gray-200">
+                          <td className="px-4 py-2.5 text-gray-700 font-medium">수입부 합계 (이월 + 당기 수입)</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-green-700">{formatCurrency(pdfData.carryoverBalance + pdfData.totalIncome)}</td>
+                        </tr>
+                        <tr className="border-b border-gray-200">
+                          <td className="px-4 py-2.5 text-gray-700 font-medium">지출부 합계</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-rose-700">{formatCurrency(pdfData.totalExpense)}</td>
+                        </tr>
+                        <tr className="bg-gray-900">
+                          <td className="px-4 py-3 font-bold text-white">기말 잔액</td>
+                          <td className="px-4 py-3 text-right font-bold tabular-nums text-white text-base">{formatCurrency(pdfData.endingBalance)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
-                {/* Items grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {pdfData.items.map((item, i) => (
-                    <div
-                      key={i}
-                      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
-                    >
-                      <div className="p-4">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">
-                          {item.description}
-                        </h3>
-                      </div>
-                      {item.imageUrl ? (
-                        <div className="px-4">
-                          <img
-                            src={item.imageUrl}
-                            alt={item.description}
-                            className="w-full h-48 object-contain rounded-lg border border-gray-200 bg-gray-50"
-                          />
+                {/* 지출 항목 영수증 그리드 */}
+                {pdfData.expenseItems.length > 0 && (
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-800 mb-3">지출 영수증 ({pdfData.expenseItems.length}건)</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {pdfData.expenseItems.map((item, i) => (
+                        <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                          <div className="p-4">
+                            <h3 className="text-sm font-semibold text-gray-900 truncate">{item.description}</h3>
+                          </div>
+                          {item.imageUrl ? (
+                            <div className="px-4">
+                              <img src={item.imageUrl} alt={item.description} className="w-full h-48 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                            </div>
+                          ) : (
+                            <div className="mx-4 h-48 flex items-center justify-center rounded-lg bg-gray-50 border border-gray-200">
+                              <span className="text-sm text-gray-400">[영수증 없음]</span>
+                            </div>
+                          )}
+                          <div className="p-4 flex items-center justify-between">
+                            <span className="text-xs text-gray-500">{formatDateShort(item.date)}</span>
+                            <span className="text-sm font-bold text-rose-600 tabular-nums">{formatCurrency(item.amount)}</span>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="mx-4 h-48 flex items-center justify-center rounded-lg bg-gray-50 border border-gray-200">
-                          <span className="text-sm text-gray-400">[영수증 없음]</span>
-                        </div>
-                      )}
-                      <div className="p-4 flex items-center justify-between">
-                        <span className="text-xs text-gray-500">
-                          {formatDateShort(item.date)}
-                        </span>
-                        <span className="text-sm font-bold text-rose-600 tabular-nums">
-                          {formatCurrency(item.expense)}
-                        </span>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </>
             )}
           </div>

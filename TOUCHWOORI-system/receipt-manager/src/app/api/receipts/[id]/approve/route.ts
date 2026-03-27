@@ -61,9 +61,10 @@ export async function POST(
     }
 
     // 배치가 아닌 단건이고 ledgerEntryId가 있으면 기존 항목 연동
-    const { ledgerEntryId, entryOverrides } = body as {
+    const { ledgerEntryId, entryOverrides, approved_amount } = body as {
       receiptIds?: string[];
       ledgerEntryId?: string;
+      approved_amount?: number;
       entryOverrides?: { date?: string; description?: string; income?: number; expense?: number; category_id?: string };
     };
     const isLinkMode = !body.receiptIds && !!ledgerEntryId;
@@ -93,15 +94,19 @@ export async function POST(
         continue;
       }
 
-      // 영수증 상태 업데이트
+      // 영수증 상태 업데이트 (단건 승인이고 approved_amount가 있으면 저장)
+      const receiptUpdate: Record<string, unknown> = {
+        status: 'approved',
+        reviewed_by: authUser.id,
+        reviewed_at: now,
+        updated_at: now,
+      };
+      if (!body.receiptIds && approved_amount !== undefined) {
+        receiptUpdate.approved_amount = approved_amount;
+      }
       const { error: updateError } = await supabase
         .from('receipts')
-        .update({
-          status: 'approved',
-          reviewed_by: authUser.id,
-          reviewed_at: now,
-          updated_at: now,
-        })
+        .update(receiptUpdate)
         .eq('id', receiptId);
 
       if (updateError) {
@@ -138,7 +143,12 @@ export async function POST(
           continue;
         }
       } else {
-        // 새 장부 항목 생성 (entryOverrides로 덮어쓰기 가능)
+        // 새 장부 항목 생성 (approved_amount 또는 entryOverrides로 금액 결정)
+        const effectiveAmount = approved_amount !== undefined ? approved_amount : receipt.final_amount;
+        const cat = entryOverrides?.category_id
+          ? (await supabase.from('categories').select('type').eq('id', entryOverrides.category_id).single()).data
+          : null;
+        const isIncome = cat?.type === 'income';
         const { error: entryError } = await supabase
           .from('ledger_entries')
           .insert({
@@ -147,8 +157,8 @@ export async function POST(
             category_id: entryOverrides?.category_id ?? receipt.category_id,
             date: entryOverrides?.date ?? receipt.date,
             description: entryOverrides?.description ?? receipt.description,
-            income: entryOverrides?.income ?? 0,
-            expense: entryOverrides?.expense ?? receipt.final_amount,
+            income: entryOverrides?.income !== undefined ? entryOverrides.income : (isIncome ? effectiveAmount : 0),
+            expense: entryOverrides?.expense !== undefined ? entryOverrides.expense : (isIncome ? 0 : effectiveAmount),
             memo: receipt.memo || null,
             source: 'receipt',
             created_by: authUser.id,

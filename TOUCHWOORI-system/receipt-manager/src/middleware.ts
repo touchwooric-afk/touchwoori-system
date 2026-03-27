@@ -11,7 +11,6 @@ const PENDING_PATHS = ['/pending'];
 const MASTER_ONLY_PATHS = [
   '/master/categories',
   '/master/positions',
-  '/master/settlements',
 ];
 
 // master + sub_master 접근 가능 경로

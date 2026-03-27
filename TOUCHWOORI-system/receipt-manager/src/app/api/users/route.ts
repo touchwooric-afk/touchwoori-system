@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase-server';
+import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
 // GET: 사용자 목록 조회 (master 전용)
@@ -86,7 +86,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, role, status, position } = body;
+    const { id, role, status, position, department_id } = body;
 
     if (!id) {
       return NextResponse.json({ error: '사용자 ID가 필요합니다' }, { status: 400 });
@@ -117,6 +117,7 @@ export async function PATCH(request: NextRequest) {
     if (role !== undefined) updateData.role = role;
     if (status !== undefined) updateData.status = status;
     if (position !== undefined) updateData.position = position;
+    if (department_id !== undefined) updateData.department_id = department_id;
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: '수정할 항목이 없습니다' }, { status: 400 });
@@ -134,6 +135,59 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json({ data });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });
+  }
+}
+
+// DELETE: 사용자 삭제 (master 전용)
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+
+    if (!profile || profile.status !== 'active' || profile.role !== 'master') {
+      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: '사용자 ID가 필요합니다' }, { status: 400 });
+    }
+
+    // 자기 자신 삭제 방지
+    if (id === authUser.id) {
+      return NextResponse.json({ error: '자기 자신은 삭제할 수 없습니다' }, { status: 403 });
+    }
+
+    // users 테이블에서 삭제
+    const { error: deleteError } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      return NextResponse.json({ error: `사용자 삭제 실패: ${deleteError.message}` }, { status: 500 });
+    }
+
+    // Supabase Auth에서도 삭제 (service client 필요)
+    const serviceClient = createServiceClient();
+    await serviceClient.auth.admin.deleteUser(id);
+
+    return NextResponse.json({ data: { message: '사용자가 삭제되었습니다' } });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });

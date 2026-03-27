@@ -73,9 +73,9 @@ export function removeCommas(str: string): number {
 export function formatRole(role: string | null): string {
   switch (role) {
     case 'master':     return '마스터';
-    case 'sub_master': return '교육목사';
+    case 'sub_master': return 'submaster';
     case 'accountant': return '회계 교사';
-    case 'auditor':    return '교육위원장';
+    case 'auditor':    return 'viewer';
     case 'teacher':    return '교사';
     default:           return '미지정';
   }

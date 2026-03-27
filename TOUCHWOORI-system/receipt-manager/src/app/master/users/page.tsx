@@ -12,7 +12,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import Pagination from '@/components/ui/Pagination';
 import { formatRole, formatDate } from '@/lib/format';
-import { Users, UserCheck, UserX, Shield, Eye } from 'lucide-react';
+import { Users, UserCheck, UserX, Shield, Eye, Trash2, Settings } from 'lucide-react';
 import type { User, UserStatus, Role } from '@/types';
 
 type TabFilter = 'all' | UserStatus;
@@ -42,6 +42,16 @@ export default function UsersPage() {
   const [selectedRole, setSelectedRole] = useState<Role>('teacher');
   const [selectedPosition, setSelectedPosition] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit role modal
+  const [editModal, setEditModal] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editRole, setEditRole] = useState<Role>('teacher');
+  const [editDepartment, setEditDepartment] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+
+  // Delete confirm
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user: User | null }>({ open: false, user: null });
 
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -104,6 +114,54 @@ export default function UsersPage() {
       fetchUsers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '승인에 실패했습니다');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditOpen = (u: User) => {
+    setEditUser(u);
+    setEditRole(u.role || 'teacher');
+    setEditDepartment(u.department_id || '고등부');
+    setEditPosition(u.position || '');
+    setEditModal(true);
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editUser) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editUser.id, role: editRole, department_id: editDepartment, position: editPosition }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success(`${editUser.name}님의 정보가 변경되었습니다`);
+      setEditModal(false);
+      setEditUser(null);
+      fetchUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '변경에 실패했습니다');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const u = deleteDialog.user;
+    if (!u) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/users?id=${u.id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success(`${u.name}님의 계정이 삭제되었습니다`);
+      setDeleteDialog({ open: false, user: null });
+      fetchUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '삭제에 실패했습니다');
     } finally {
       setSubmitting(false);
     }
@@ -204,7 +262,7 @@ export default function UsersPage() {
                       직분
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      역할
+                      권한
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       상태
@@ -239,34 +297,56 @@ export default function UsersPage() {
                         {formatDate(u.created_at)}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {u.status === 'pending' && (
-                          <Button size="sm" onClick={() => handleApproveOpen(u)}>
-                            승인
-                          </Button>
-                        )}
-                        {u.status === 'active' && (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
-                            onClick={() =>
-                              setConfirmDialog({ open: true, user: u, action: 'deactivate' })
-                            }
-                          >
-                            비활성화
-                          </Button>
-                        )}
-                        {u.status === 'inactive' && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              setConfirmDialog({ open: true, user: u, action: 'reactivate' })
-                            }
-                          >
-                            재활성화
-                          </Button>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {u.status === 'pending' && (
+                            <Button size="sm" onClick={() => handleApproveOpen(u)}>
+                              승인
+                            </Button>
+                          )}
+                          {u.status === 'active' && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleEditOpen(u)}
+                                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
+                              >
+                                <Settings className="h-3.5 w-3.5" />
+                                변경
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
+                                onClick={() =>
+                                  setConfirmDialog({ open: true, user: u, action: 'deactivate' })
+                                }
+                              >
+                                비활성화
+                              </Button>
+                            </>
+                          )}
+                          {u.status === 'inactive' && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() =>
+                                setConfirmDialog({ open: true, user: u, action: 'reactivate' })
+                              }
+                            >
+                              재활성화
+                            </Button>
+                          )}
+                          {isMaster && u.id !== currentUser?.id && (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => setDeleteDialog({ open: true, user: u })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -312,14 +392,14 @@ export default function UsersPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                역할 선택 <span className="text-danger-600">*</span>
+                권한 선택 <span className="text-danger-600">*</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: 'teacher',    label: '교사',      icon: UserCheck, masterOnly: false },
                   { value: 'accountant', label: '회계 교사', icon: UserX,     masterOnly: false },
-                  { value: 'auditor',    label: '교육위원장', icon: Eye,      masterOnly: false },
-                  { value: 'sub_master', label: '교육목사',  icon: Shield,   masterOnly: true  },
+                  { value: 'auditor',    label: 'viewer', icon: Eye,      masterOnly: false },
+                  { value: 'sub_master', label: 'submaster',  icon: Shield,   masterOnly: true  },
                 ].filter((opt) => !opt.masterOnly || isMaster).map((opt) => (
                   <label
                     key={opt.value}
@@ -357,6 +437,104 @@ export default function UsersPage() {
           </div>
         )}
       </Modal>
+
+      {/* 권한/부서 변경 모달 */}
+      <Modal isOpen={editModal} onClose={() => setEditModal(false)} title="권한 · 부서 · 직분 변경">
+        {editUser && (
+          <div className="space-y-5">
+            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">이름</span>
+                <span className="text-sm font-medium text-gray-900">{editUser.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">이메일</span>
+                <span className="text-sm font-medium text-gray-900">{editUser.email}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">권한</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'teacher',    label: '교사',      icon: UserCheck, masterOnly: false },
+                  { value: 'accountant', label: '회계 교사', icon: UserX,     masterOnly: false },
+                  { value: 'auditor',    label: 'viewer', icon: Eye,      masterOnly: false },
+                  { value: 'sub_master', label: 'submaster',  icon: Shield,   masterOnly: true  },
+                ].filter((opt) => !opt.masterOnly || isMaster).map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`
+                      flex items-center justify-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
+                      ${editRole === opt.value
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      }
+                    `}
+                  >
+                    <input
+                      type="radio"
+                      name="editRole"
+                      value={opt.value}
+                      checked={editRole === opt.value}
+                      onChange={() => setEditRole(opt.value as Role)}
+                      className="sr-only"
+                    />
+                    <opt.icon className="h-4 w-4" />
+                    <span className="text-sm font-medium">{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">부서</label>
+              <select
+                value={editDepartment}
+                onChange={(e) => setEditDepartment(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                  focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              >
+                <option value="고등부">터치우리 고등부</option>
+                <option value="중등부">드림우리 중등부</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">직분</label>
+              <input
+                type="text"
+                value={editPosition}
+                onChange={(e) => setEditPosition(e.target.value)}
+                placeholder="예: 목사, 전도사, 장로, 교사"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                  focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <Button variant="secondary" onClick={() => setEditModal(false)} disabled={submitting}>
+                취소
+              </Button>
+              <Button onClick={handleEditSubmit} loading={submitting}>
+                변경하기
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={deleteDialog.open}
+        title="사용자 삭제"
+        message={`${deleteDialog.user?.name}님의 계정을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        confirmText="삭제"
+        variant="danger"
+        loading={submitting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDialog({ open: false, user: null })}
+      />
 
       {/* 상태 변경 확인 다이얼로그 */}
       <ConfirmDialog

@@ -63,11 +63,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: `영수증 목록 조회에 실패했습니다: ${error.message}` }, { status: 500 });
     }
 
+    // 총 정산요청금액 계산
+    let pendingTotal = 0;
+    if (profile.role === 'teacher') {
+      // teacher: 본인의 승인 대기 총액
+      const { data: pendingRows } = await supabase
+        .from('receipts')
+        .select('final_amount')
+        .eq('submitted_by', authUser.id)
+        .eq('status', 'pending');
+      pendingTotal = (pendingRows || []).reduce((s, r) => s + (r.final_amount || 0), 0);
+    } else if (status === 'pending') {
+      // accountant/master: pending 목록 조회 시 전체 pending 합계
+      let sumQuery = supabase
+        .from('receipts')
+        .select('final_amount')
+        .eq('status', 'pending');
+      if (profile.role === 'accountant') {
+        sumQuery = sumQuery.eq('department_id', profile.department_id);
+      }
+      const { data: sumRows } = await sumQuery;
+      pendingTotal = (sumRows || []).reduce((s, r) => s + (r.final_amount || 0), 0);
+    }
+
     return NextResponse.json({
       data: data || [],
       total: count || 0,
       page,
       pageSize,
+      pendingTotal,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -110,6 +134,9 @@ export async function POST(request: NextRequest) {
       ocr_raw,
       skip_auto_ledger, // 기존 장부 항목에 연결할 때 중복 생성 방지
       skip_duplicate_check, // 기존 항목 연결 시 중복 검사 스킵
+      bank_name,
+      account_holder,
+      account_number,
     } = body;
 
     // 유효성 검사
@@ -193,6 +220,10 @@ export async function POST(request: NextRequest) {
         status: isEditor ? 'approved' : 'pending',
         reviewed_by: isEditor ? authUser.id : null,
         reviewed_at: isEditor ? now : null,
+        bank_name: bank_name || null,
+        account_holder: account_holder || null,
+        account_number: account_number || null,
+        has_duplicate_warning: body.has_duplicate_warning || false,
       })
       .select()
       .single();

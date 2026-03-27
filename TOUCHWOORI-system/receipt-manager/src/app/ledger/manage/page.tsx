@@ -35,7 +35,7 @@ export default function LedgerManagePage() {
   }>({ open: false, ledger: null });
   const [deactivateLoading, setDeactivateLoading] = useState(false);
 
-  const isEditor = user?.role === 'accountant' || user?.role === 'master';
+  const isEditor = user?.role === 'accountant' || user?.role === 'master' || user?.role === 'sub_master';
 
   useEffect(() => {
     if (!isEditor) {

@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master') {
-      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    if (profile.role !== 'master' && profile.role !== 'accountant') {
+      return NextResponse.json({ error: '회계 교사 이상 권한이 필요합니다' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -111,8 +111,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master') {
-      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    if (profile.role !== 'master' && profile.role !== 'accountant') {
+      return NextResponse.json({ error: '회계 교사 이상 권한이 필요합니다' }, { status: 403 });
     }
 
     const body = await request.json();

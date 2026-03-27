@@ -1,4 +1,35 @@
 import type { OcrResult } from '@/types';
+import { preprocessForOcr } from './imagePreprocess';
+
+/**
+ * Tesseract.js로 이미지 파일을 OCR 처리합니다.
+ * 전처리(회전보정, 대비향상) 후 한국어+영어 인식.
+ */
+export async function runOcr(file: File): Promise<OcrResult> {
+  const { createWorker } = await import('tesseract.js');
+
+  // 이미지 전처리
+  let ocrSource: Blob | File = file;
+  try {
+    ocrSource = await preprocessForOcr(file);
+  } catch {
+    // 전처리 실패 시 원본 사용
+  }
+
+  const worker = await createWorker('kor+eng', 1, {
+    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/worker.min.js',
+    langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@6/tesseract-core.wasm.js',
+    logger: () => {}, // 로그 억제
+  });
+
+  try {
+    const { data } = await worker.recognize(ocrSource);
+    return parseOcrResult(data.text);
+  } finally {
+    await worker.terminate();
+  }
+}
 
 /**
  * OCR 텍스트에서 날짜를 추출합니다.

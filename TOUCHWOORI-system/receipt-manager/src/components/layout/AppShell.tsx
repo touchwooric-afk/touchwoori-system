@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useUser } from '@/hooks/useUser';
@@ -56,9 +57,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
-              TOUCHWOORI
-            </h1>
+            <Link
+              href="/"
+              className="text-lg font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+            >
+              {user.department_id?.includes('중등부') ? 'DREAMWOORI' : 'TOUCHWOORI'}
+            </Link>
           </div>
 
           {/* 사용자 정보 */}
@@ -100,7 +104,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar role={user.role} />
 
       {/* 메인 콘텐츠 */}
-      <main className="pt-16 pb-20 md:pb-6 md:pl-56">
+      <main className="pt-16 pb-20 md:pb-6 md:pl-64">
         <div className="max-w-5xl mx-auto px-4 py-6 md:px-6 animate-fade-in">
           {children}
         </div>

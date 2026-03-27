@@ -13,9 +13,11 @@ export default function SignupPage() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
+  const [department, setDepartment] = useState('');
   const [positions, setPositions] = useState<Position[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -56,6 +58,10 @@ export default function SignupPage() {
       setError('직분을 선택해주세요');
       return;
     }
+    if (!department) {
+      setError('부서를 선택해주세요');
+      return;
+    }
 
     setLoading(true);
 
@@ -84,25 +90,27 @@ export default function SignupPage() {
         return;
       }
 
-      // 2. users 테이블에 프로필 삽입 (status: pending, role: null)
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
+      // 2. API를 통해 프로필 생성 (service client로 RLS 우회)
+      const profileRes = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           id: authData.user.id,
           email,
           name: name.trim(),
-          department_id: '고등부',
+          department_id: department,
           position,
-          status: 'pending',
-        });
+        }),
+      });
 
-      if (profileError) {
-        setError(`프로필 생성 실패: ${profileError.message}`);
+      if (!profileRes.ok) {
+        const profileJson = await profileRes.json();
+        setError(profileJson.error || '프로필 생성에 실패했습니다');
         return;
       }
 
-      // 승인 대기 페이지로 이동
-      router.push('/pending');
+      // 성공 화면 표시
+      setSuccess(true);
     } catch (err) {
       setError(`오류: ${err instanceof Error ? err.message : '잠시 후 다시 시도해주세요'}`);
     } finally {
@@ -121,6 +129,24 @@ export default function SignupPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg p-6">
+          {success ? (
+            <div className="text-center py-6 space-y-4">
+              <div className="mx-auto w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">계정 신청이 완료되었습니다</h2>
+              <p className="text-sm text-gray-500">
+                관리자가 승인하면 서비스를 이용하실 수 있습니다.<br />
+                승인까지 잠시 기다려주세요.
+              </p>
+              <Button onClick={() => router.push('/login')} className="w-full mt-2">
+                로그인 페이지로 이동
+              </Button>
+            </div>
+          ) : (
+          <>
           <h2 className="text-lg font-semibold text-gray-900 mb-6">계정 신청</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -193,6 +219,24 @@ export default function SignupPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                부서 <span className="text-danger-600">*</span>
+              </label>
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                required
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                  focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+                  outline-none transition-shadow"
+              >
+                <option value="">부서를 선택하세요</option>
+                <option value="고등부">터치우리 고등부</option>
+                <option value="중등부">드림우리 중등부</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 직분 <span className="text-danger-600">*</span>
               </label>
               <select
@@ -229,6 +273,8 @@ export default function SignupPage() {
               이미 계정이 있으신가요? 로그인
             </Link>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

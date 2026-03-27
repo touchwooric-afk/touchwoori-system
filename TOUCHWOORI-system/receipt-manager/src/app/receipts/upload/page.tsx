@@ -12,9 +12,9 @@ import { parseFilename } from '@/lib/parseFilename';
 import { createClient } from '@/lib/supabase';
 import {
   Upload, CheckCircle, AlertCircle, Loader2, X,
-  ZoomIn, Link, FilePlus,
+  ZoomIn, Link, FilePlus, Star, Trash2,
 } from 'lucide-react';
-import type { Ledger, Category } from '@/types';
+import type { Ledger, Category, AccountFavorite } from '@/types';
 
 // ─── Types ───────────────────────────────────────────────────────
 interface Candidate {
@@ -43,6 +43,7 @@ interface ReceiptRow {
   matchMode: MatchMode;
   saveStatus: SaveStatus;
   errorMsg?: string;
+  similarWarning: { description: string; date: string; status: string; submitter?: string } | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -80,6 +81,17 @@ export default function ReceiptUploadPage() {
   const [previewModal, setPreviewModal]     = useState<{ open: boolean; url: string; name: string }>({ open: false, url: '', name: '' });
   const [savingAll, setSavingAll]           = useState(false);
   const [teacherLedgerId, setTeacherLedgerId] = useState('');
+  // 계좌 정보 (일괄 적용)
+  const [bankInfo, setBankInfo] = useState({ bank_name: '', account_holder: '', account_number: '' });
+  const [favorites, setFavorites] = useState<AccountFavorite[]>([]);
+  const [favLabelInput, setFavLabelInput] = useState('');
+  const [showFavInput, setShowFavInput] = useState(false);
+  const [savingFav, setSavingFav] = useState(false);
+  const [showFavDropdown, setShowFavDropdown] = useState(false);
+  const favDropdownRef = useRef<HTMLDivElement>(null);
+  const [bankError, setBankError] = useState(false);
+  const bankSectionRef = useRef<HTMLDivElement>(null);
+
   const [duplicateQueue, setDuplicateQueue] = useState<{
     row: ReceiptRow;
     existing: { id: string; description: string; date: string; final_amount: number; status: string };
@@ -108,27 +120,76 @@ export default function ReceiptUploadPage() {
   }, [categories]);
 
   useEffect(() => {
+    if (!user) return;
     (async () => {
-      const fetches: Promise<Response>[] = [fetch('/api/categories')];
-      if (!isTeacher) fetches.unshift(fetch('/api/ledgers'));
-      const results = await Promise.all(fetches);
       if (!isTeacher) {
-        const lJson = await results[0].json();
-        const cJson = await results[1].json();
-        const active = (lJson.data as Ledger[]).filter((l: Ledger) => l.is_active);
+        const [lRes, cRes] = await Promise.all([fetch('/api/ledgers'), fetch('/api/categories')]);
+        const lJson = await lRes.json();
+        const cJson = await cRes.json();
+        const active = ((lJson.data as Ledger[]) || []).filter((l: Ledger) => l.is_active);
         setLedgers(active);
         if (active.length > 0) setSelectedLedgerId(active[0].id);
-        setCategories((cJson.data as Category[]).filter((c: Category) => c.is_active));
+        setCategories(((cJson.data as Category[]) || []).filter((c: Category) => c.is_active));
       } else {
         const [cRes, lRes] = await Promise.all([fetch('/api/categories'), fetch('/api/ledgers')]);
         const cJson = await cRes.json();
         const lJson = await lRes.json();
-        setCategories((cJson.data as Category[]).filter((c: Category) => c.is_active));
-        const mainLedger = (lJson.data as Ledger[]).find((l) => l.type === 'main' && l.is_active);
+        setCategories(((cJson.data as Category[]) || []).filter((c: Category) => c.is_active));
+        const mainLedger = ((lJson.data as Ledger[]) || []).find((l) => l.type === 'main' && l.is_active);
         if (mainLedger) setTeacherLedgerId(mainLedger.id);
       }
     })();
-  }, [isTeacher]);
+  }, [user, isTeacher]);
+
+  // 즐겨찾기 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (favDropdownRef.current && !favDropdownRef.current.contains(e.target as Node)) {
+        setShowFavDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 즐겨찾기 로드
+  useEffect(() => {
+    fetch('/api/account-favorites')
+      .then(r => r.json())
+      .then(j => { if (j.data) setFavorites(j.data); })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveFav = async () => {
+    if (!favLabelInput.trim() || !bankInfo.bank_name || !bankInfo.account_holder || !bankInfo.account_number) {
+      toast.error('계좌 정보와 즐겨찾기 이름을 모두 입력해주세요');
+      return;
+    }
+    setSavingFav(true);
+    try {
+      const res = await fetch('/api/account-favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: favLabelInput.trim(), ...bankInfo }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setFavorites(prev => [json.data, ...prev]);
+      setFavLabelInput('');
+      setShowFavInput(false);
+      setShowFavDropdown(false);
+      toast.success('즐겨찾기에 저장되었습니다');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '저장 실패');
+    } finally {
+      setSavingFav(false);
+    }
+  };
+
+  const handleDeleteFav = async (id: string) => {
+    await fetch(`/api/account-favorites?id=${id}`, { method: 'DELETE' });
+    setFavorites(prev => prev.filter(f => f.id !== id));
+  };
 
   // ── 후보 조회 ──────────────────────────────────────────────────
   const fetchCandidates = useCallback(async (
@@ -166,6 +227,28 @@ export default function ReceiptUploadPage() {
     } catch { /* 후보 없어도 계속 */ }
   }, []);
 
+  // ── 유사 영수증 중복 체크 ──────────────────────────────────────
+  const checkSimilarReceipt = useCallback(async (localId: string, amount: string) => {
+    const num = parseAmountInput(amount);
+    if (!num) return;
+    try {
+      const res = await fetch(`/api/receipts/check-similar?amount=${num}`);
+      const json = await res.json();
+      if (json.hasSimilar && json.similar) {
+        const sim = json.similar;
+        setRows((prev) => prev.map((r) => r.localId !== localId ? r : {
+          ...r,
+          similarWarning: {
+            description: sim.description,
+            date: sim.date,
+            status: sim.status,
+            submitter: sim.submitter?.name,
+          },
+        }));
+      }
+    } catch { /* silent */ }
+  }, []);
+
   // ── 파일 선택 ──────────────────────────────────────────────────
   const handleFiles = useCallback(async (files: FileList) => {
     const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
@@ -186,21 +269,39 @@ export default function ReceiptUploadPage() {
         selectedCandidateId: null,
         matchMode: 'new' as MatchMode,
         saveStatus: 'idle' as SaveStatus,
+        similarWarning: null,
       };
     });
 
     setRows((prev) => [...prev, ...newRows]);
 
-    if (ledgerIdToUse) {
+    if (!isTeacher && ledgerIdToUse) {
       for (const row of newRows) {
         fetchCandidates(row.localId, ledgerIdToUse, row.description, row.amount, row.date);
       }
     }
-  }, [isTeacher, teacherLedgerId, selectedLedgerId, suggestCategoryId, fetchCandidates, toast]);
+
+    // 유사 영수증 중복 체크 (같은 금액으로 이미 승인된 영수증 존재 여부)
+    for (const row of newRows) {
+      if (parseAmountInput(row.amount) > 0) {
+        checkSimilarReceipt(row.localId, row.amount);
+      }
+    }
+  }, [isTeacher, teacherLedgerId, selectedLedgerId, suggestCategoryId, fetchCandidates, checkSimilarReceipt, toast]);
 
   const updateRow = (localId: string, patch: Partial<ReceiptRow>) => {
     setRows((prev) => prev.map((r) => r.localId === localId ? { ...r, ...patch } : r));
   };
+
+  // ── 계좌 정보 검증 ──────────────────────────────────────────
+  const checkBankInfo = useCallback((): boolean => {
+    if (!bankInfo.bank_name || !bankInfo.account_holder || !bankInfo.account_number) {
+      setBankError(true);
+      bankSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return false;
+    }
+    return true;
+  }, [bankInfo]);
 
   // ── 저장 (단건) ────────────────────────────────────────────────
   const saveRow = useCallback(async (row: ReceiptRow): Promise<boolean> => {
@@ -209,10 +310,11 @@ export default function ReceiptUploadPage() {
       toast.error(`날짜, 금액, 카테고리, 항목명을 모두 입력해주세요 (${row.file.name})`);
       return false;
     }
-    if (row.matchMode === 'link' && !row.selectedCandidateId) {
+    if (!isTeacher && row.matchMode === 'link' && !row.selectedCandidateId) {
       toast.error(`장부 항목을 선택하거나 "새 항목"으로 변경해주세요 (${row.file.name})`);
       return false;
     }
+    if (!checkBankInfo()) return false;
 
     updateRow(row.localId, { saveStatus: 'saving' });
 
@@ -251,6 +353,10 @@ export default function ReceiptUploadPage() {
           image_url: imageUrl,
           skip_auto_ledger: row.matchMode === 'link',
           skip_duplicate_check: row.matchMode === 'link',
+          bank_name: bankInfo.bank_name || null,
+          account_holder: bankInfo.account_holder || null,
+          account_number: bankInfo.account_number || null,
+          has_duplicate_warning: !!row.similarWarning,
         }),
       });
       const receiptJson = await receiptRes.json();
@@ -283,7 +389,7 @@ export default function ReceiptUploadPage() {
       updateRow(row.localId, { saveStatus: 'failed' });
       return false;
     }
-  }, [isTeacher, teacherLedgerId, selectedLedgerId, user, toast]);
+  }, [isTeacher, teacherLedgerId, selectedLedgerId, user, toast, bankInfo, checkBankInfo]);
 
   // ── 유효성 검사 (전체 저장용) ──────────────────────────────────
   const validateRow = (row: ReceiptRow): string | null => {
@@ -291,7 +397,7 @@ export default function ReceiptUploadPage() {
     if (!parseAmountInput(row.amount)) return '금액을 입력해주세요';
     if (!row.description.trim()) return '항목명을 입력해주세요';
     if (!row.categoryId) return '카테고리를 선택해주세요';
-    if (row.matchMode === 'link' && !row.selectedCandidateId) return '장부 항목을 선택하거나 새 항목으로 변경해주세요';
+    if (!isTeacher && row.matchMode === 'link' && !row.selectedCandidateId) return '장부 항목을 선택하거나 새 항목으로 변경해주세요';
     return null;
   };
 
@@ -343,6 +449,8 @@ export default function ReceiptUploadPage() {
   const pendingCount = rows.filter((r) => r.saveStatus === 'idle' || r.saveStatus === 'failed' || r.saveStatus === 'error').length;
   const errorCount    = rows.filter((r) => r.saveStatus === 'error').length;
   const savedCount   = rows.filter((r) => r.saveStatus === 'saved').length;
+  const totalAmount  = rows.reduce((s, r) => s + parseAmountInput(r.amount), 0);
+  const savedAmount  = rows.filter((r) => r.saveStatus === 'saved').reduce((s, r) => s + parseAmountInput(r.amount), 0);
 
   return (
     <AppShell>
@@ -361,19 +469,24 @@ export default function ReceiptUploadPage() {
                 </p>
               </div>
             </div>
-            {rows.length > 0 && (
-              <Button onClick={handleSaveAll} loading={savingAll} disabled={pendingCount === 0}>
-                <CheckCircle className="h-4 w-4" />
-                {pendingCount}건 전체 저장
-              </Button>
-            )}
           </div>
         </div>
 
         {/* 파일명 형식 안내 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700 space-y-1.5">
-          <p className="font-semibold">파일명 필수 포함 항목: 날짜 · 항목명 · 금액</p>
-          <p className="text-xs text-blue-600">예) 26년 4월 3일 70000원 교제비 &nbsp;/&nbsp; 260403 70000 교제비 &nbsp;/&nbsp; 0403-70000-교제비</p>
+        <div className="space-y-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700">
+            <p>파일명에 날짜, 금액, 항목이 포함되어 있으면 자동으로 인식하고 입력합니다.</p>
+            <p className="text-xs text-blue-600 mt-2">촬영 후 파일명을 편집하실 수 있다면 미리 정리해두면 더 편하게 업로드하실 수 있습니다.</p>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700 space-y-1.5">
+            <p className="font-semibold">파일명 필수 포함 항목: 날짜 · 항목명 · 금액</p>
+            <p className="text-xs text-blue-600">예) 26년 4월 3일 70000원 교제비 &nbsp;/&nbsp; 260403 70000 교제비 &nbsp;/&nbsp; 0403-70000-교제비</p>
+          </div>
+        </div>
+
+        {/* 계좌 입력 안내 */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700">
+          회계 선생님이 송금하실 때 불편함 없도록 <span className="font-semibold">계좌번호, 성함, 은행명</span>을 정확하게 입력해주세요.
         </div>
 
         {/* 안내 배너 (teacher) */}
@@ -382,6 +495,119 @@ export default function ReceiptUploadPage() {
             저장 시 <span className="font-semibold">승인 대기</span> 상태로 등록됩니다. 장부 항목이 있으면 연결하고, 없으면 회계 담당자가 승인 시 추가합니다.
           </div>
         )}
+
+        {/* 계좌 정보 (송금 안내) */}
+        <div ref={bankSectionRef} className={`rounded-xl shadow-sm p-5 space-y-4 ${bankError ? 'bg-red-50 ring-2 ring-red-400' : 'bg-white'}`}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">계좌 정보 <span className="text-xs font-normal text-gray-400">(회계 담당자에게 전달됩니다)</span></h2>
+            {bankError && <span className="text-xs font-semibold text-red-600">⚠ 필수 정보입니다</span>}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div className="w-[120px]">
+              <label className={`block text-xs mb-1 ${bankError && !bankInfo.bank_name ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>은행명</label>
+              <input
+                type="text"
+                value={bankInfo.bank_name}
+                onChange={e => { setBankInfo(p => ({ ...p, bank_name: e.target.value })); setBankError(false); }}
+                placeholder="예) 국민은행"
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${bankError && !bankInfo.bank_name ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-primary-500'}`}
+              />
+            </div>
+            <div className="w-[120px]">
+              <label className={`block text-xs mb-1 ${bankError && !bankInfo.account_holder ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>예금주</label>
+              <input
+                type="text"
+                value={bankInfo.account_holder}
+                onChange={e => { setBankInfo(p => ({ ...p, account_holder: e.target.value })); setBankError(false); }}
+                placeholder="예) 홍길동"
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${bankError && !bankInfo.account_holder ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-primary-500'}`}
+              />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <label className={`block text-xs mb-1 ${bankError && !bankInfo.account_number ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>계좌번호</label>
+              <input
+                type="text"
+                value={bankInfo.account_number}
+                onChange={e => { setBankInfo(p => ({ ...p, account_number: e.target.value })); setBankError(false); }}
+                placeholder="예) 123-456-789012"
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${bankError && !bankInfo.account_number ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-primary-500'}`}
+              />
+            </div>
+          </div>
+          {/* 즐겨찾기 드롭다운 */}
+          <div className="relative" ref={favDropdownRef}>
+            <button
+              onClick={() => { setShowFavDropdown(p => !p); setShowFavInput(false); setFavLabelInput(''); }}
+              className="inline-flex items-center gap-1.5 text-xs text-primary-600 hover:text-primary-800 font-medium"
+            >
+              <Star className="h-3.5 w-3.5" /> 즐겨찾기
+            </button>
+            {showFavDropdown && (
+              <div className="absolute left-0 top-6 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-64 py-2">
+                {favorites.length === 0 && !showFavInput && (
+                  <p className="text-xs text-gray-400 px-3 py-2">저장된 즐겨찾기가 없습니다</p>
+                )}
+                {favorites.map(f => (
+                  <div
+                    key={f.id}
+                    className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer group"
+                    onClick={() => {
+                      setBankInfo({ bank_name: f.bank_name, account_holder: f.account_holder, account_number: f.account_number });
+                      setShowFavDropdown(false);
+                    }}
+                  >
+                    <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                      <Star className="h-3 w-3 text-amber-400 fill-amber-400 shrink-0" />
+                      {f.label}
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteFav(f.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 ml-2"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {favorites.length > 0 && <div className="border-t border-gray-100 my-1" />}
+                {!showFavInput ? (
+                  <button
+                    onClick={() => setShowFavInput(true)}
+                    className="w-full text-left text-xs text-primary-600 hover:text-primary-800 px-3 py-2 hover:bg-gray-50 flex items-center gap-1.5"
+                  >
+                    <Star className="h-3.5 w-3.5" /> 현재 계좌 저장
+                  </button>
+                ) : (
+                  <div className="px-3 py-2 space-y-2">
+                    <input
+                      type="text"
+                      value={favLabelInput}
+                      onChange={e => setFavLabelInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSaveFav()}
+                      placeholder="즐겨찾기 이름 (예: 내 계좌)"
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveFav}
+                        disabled={savingFav}
+                        className="flex-1 text-xs bg-primary-600 text-white rounded-lg px-3 py-1.5 hover:bg-primary-700 disabled:opacity-50"
+                      >
+                        {savingFav ? '저장 중...' : '저장'}
+                      </button>
+                      <button
+                        onClick={() => { setShowFavInput(false); setFavLabelInput(''); }}
+                        className="text-xs text-gray-500 px-2"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* 장부 선택 + 파일 선택 */}
         <div className="bg-white rounded-xl shadow-sm p-5 flex flex-wrap items-end gap-4">
@@ -432,11 +658,18 @@ export default function ReceiptUploadPage() {
         {/* 테이블 */}
         {rows.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4 text-sm text-gray-500">
+            <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
               <span>총 {rows.length}건</span>
               {savedCount  > 0 && <span className="text-emerald-600">✓ 저장 {savedCount}건</span>}
               {pendingCount > 0 && <span className="text-amber-600">대기 {pendingCount}건</span>}
               {errorCount  > 0 && <span className="text-rose-600">⚠ 보류 {errorCount}건</span>}
+              <span className="ml-auto px-4 py-1.5 rounded-lg bg-orange-100 border border-orange-300">
+                <span className="font-medium text-orange-900">총 정산요청금액</span>
+                {savedCount > 0 && savedCount < rows.length
+                  ? <> <span className="font-bold text-orange-600">{formatCurrency(savedAmount)}</span> <span className="text-xs font-normal text-orange-500">/ 전체 {formatCurrency(totalAmount)}</span></>
+                  : <> <span className="font-bold text-orange-700">{formatCurrency(totalAmount)}</span></>
+                }
+              </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -448,7 +681,7 @@ export default function ReceiptUploadPage() {
                     <th className="px-3 py-2 w-32 text-right">금액</th>
                     <th className="px-3 py-2 w-36">카테고리</th>
                     <th className="px-3 py-2 w-40">항목명</th>
-                    <th className="px-3 py-2 w-64">장부 연결</th>
+                    {!isTeacher && <th className="px-3 py-2 w-64">장부 연결</th>}
                     <th className="px-3 py-2 w-16 text-center">저장</th>
                     <th className="px-3 py-2 w-8"></th>
                   </tr>
@@ -539,6 +772,23 @@ export default function ReceiptUploadPage() {
           </div>
         </div>
       )}
+
+      {/* 하단 고정 저장 바 */}
+      {rows.length > 0 && (
+        <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center z-20 pointer-events-none px-4">
+          <div className="pointer-events-auto bg-white rounded-2xl shadow-xl border border-gray-200 px-5 py-3 flex items-center gap-4">
+            <div className="text-sm text-gray-600">
+              <span className="font-semibold text-gray-900">{rows.length}개</span> 파일
+              {savedCount > 0 && <span className="ml-2 text-emerald-600">✓ {savedCount}건 저장됨</span>}
+              {errorCount > 0 && <span className="ml-2 text-red-500">⚠ {errorCount}건 오류</span>}
+            </div>
+            <Button onClick={handleSaveAll} loading={savingAll} disabled={pendingCount === 0}>
+              <CheckCircle className="h-4 w-4" />
+              {pendingCount > 0 ? `${pendingCount}건 전체 저장` : '모두 저장됨'}
+            </Button>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
@@ -561,6 +811,22 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
   const isError  = row.saveStatus === 'error';
 
   return (
+    <>
+    {row.similarWarning && !isSaved && (
+      <tr>
+        <td colSpan={99} className="px-4 pt-2 pb-0">
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs text-amber-800">
+            <span className="text-amber-500 text-sm shrink-0">⚠</span>
+            <span>
+              <span className="font-semibold">동일 금액으로 이미 승인된 영수증이 있습니다. 중복 제출인지 확인해주세요 (제출은 가능합니다)</span>
+              {' — '}
+              {row.similarWarning.description} · {row.similarWarning.date}
+              {row.similarWarning.submitter ? ` · 제출자: ${row.similarWarning.submitter}` : ''}
+            </span>
+          </div>
+        </td>
+      </tr>
+    )}
     <tr className={`${isSaved ? 'opacity-50 bg-gray-50' : isError ? 'bg-rose-50 hover:bg-rose-100' : 'hover:bg-gray-50'} transition-colors`}>
       {/* 썸네일 */}
       <td className="px-3 py-2">
@@ -640,8 +906,8 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
         />
       </td>
 
-      {/* 장부 연결 */}
-      <td className="px-3 py-2">
+      {/* 장부 연결 — 회계교사/마스터만 표시 */}
+      {!isTeacher && <td className="px-3 py-2">
         {isSaved ? (
           <span className="text-xs text-emerald-600">저장됨</span>
         ) : (
@@ -709,7 +975,7 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
             )}
           </div>
         )}
-      </td>
+      </td>}
 
       {/* 저장 */}
       <td className="px-3 py-2 text-center">
@@ -743,5 +1009,6 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
         )}
       </td>
     </tr>
+    </>
   );
 }

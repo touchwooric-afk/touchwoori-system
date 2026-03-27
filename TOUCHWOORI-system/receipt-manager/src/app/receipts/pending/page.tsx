@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useUser } from '@/hooks/useUser';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
@@ -10,7 +10,7 @@ import Pagination from '@/components/ui/Pagination';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Modal from '@/components/ui/Modal';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { CheckCircle, XCircle, Image as ImageIcon, Trash2, X, Link2, PlusCircle } from 'lucide-react';
+import { CheckCircle, XCircle, Image as ImageIcon, Trash2, X, Link2, PlusCircle, AlertTriangle } from 'lucide-react';
 import type { ReceiptWithUser, Category } from '@/types';
 
 type LedgerEntry = {
@@ -30,6 +30,7 @@ export default function PendingReceiptsPage() {
 
   const [receipts, setReceipts] = useState<ReceiptWithUser[]>([]);
   const [total, setTotal] = useState(0);
+  const [pendingTotal, setPendingTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
 
@@ -70,6 +71,8 @@ export default function PendingReceiptsPage() {
   const [entryDesc, setEntryDesc] = useState('');
   const [entryAmount, setEntryAmount] = useState('');
   const [entryCategoryId, setEntryCategoryId] = useState('');
+  // 승인 금액 (회계교사 수정 가능)
+  const [approvedAmount, setApprovedAmount] = useState('');
 
   const fetchReceipts = async () => {
     setLoading(true);
@@ -84,6 +87,7 @@ export default function PendingReceiptsPage() {
       if (json.data) {
         setReceipts(json.data);
         setTotal(json.total ?? json.data.length);
+        if (json.pendingTotal !== undefined) setPendingTotal(json.pendingTotal);
       }
     } catch {
       toast.error('영수증 목록을 불러오지 못했습니다');
@@ -129,7 +133,7 @@ export default function PendingReceiptsPage() {
   // Open approve modal
   const openApproveModal = async (receipt: ReceiptWithUser) => {
     setApproveModal({ open: true, receipt });
-    setLinkMode('new');
+    setLinkMode('existing');
     setSelectedEntryId(null);
     setLedgerEntries([]);
     setAlreadyLinkedEntry(null);
@@ -137,8 +141,9 @@ export default function PendingReceiptsPage() {
     setEntryDesc(receipt.description);
     setEntryAmount(receipt.final_amount.toLocaleString('ko-KR'));
     setEntryCategoryId(receipt.category_id || '');
+    setApprovedAmount(receipt.final_amount.toLocaleString('ko-KR'));
 
-    // 이미 연동된 장부 항목이 있는지 확인
+    // 이미 연동된 장부 항목이 있는지 확인하면서 동시에 기존 항목 목록도 로드
     setCheckingLink(true);
     try {
       const ledgerRes = await fetch('/api/ledgers');
@@ -147,8 +152,17 @@ export default function PendingReceiptsPage() {
       if (mainLedger) {
         const entriesRes = await fetch(`/api/ledgers/${mainLedger.id}/entries?pageSize=200`);
         const entriesJson = await entriesRes.json();
-        const linked = (entriesJson.data as LedgerEntry[])?.find(e => e.receipt_id === receipt.id);
-        if (linked) setAlreadyLinkedEntry(linked);
+        const entries: LedgerEntry[] = entriesJson.data || [];
+        setLedgerEntries(entries);
+        const linked = entries.find(e => e.receipt_id === receipt.id);
+        if (linked) {
+          setAlreadyLinkedEntry(linked);
+        } else {
+          // 미연동 항목 중 금액 일치가 정확히 1개면 자동 선택
+          const available = entries.filter(e => !e.receipt_id && (e.expense || 0) > 0);
+          const matches = available.filter(e => e.expense === receipt.final_amount);
+          if (matches.length === 1) setSelectedEntryId(matches[0].id);
+        }
       }
     } catch { /* ignore */ }
     setCheckingLink(false);
@@ -182,17 +196,24 @@ export default function PendingReceiptsPage() {
     if (!receipt) return;
     setApprovingId(receipt.id);
     try {
-      const body: Record<string, unknown> = {};
+      const approvedNum = parseAmount(approvedAmount);
+      const originalNum = receipt.final_amount;
+      const body: Record<string, unknown> = {
+        approved_amount: approvedNum,
+      };
       if (linkMode === 'existing' && selectedEntryId) {
         body.ledgerEntryId = selectedEntryId;
       } else if (linkMode === 'new') {
         const cat = categories.find((c) => c.id === entryCategoryId);
-        const amount = parseAmount(entryAmount);
+        // 장부 항목 금액은 approved_amount 우선 (entryAmount가 승인금액과 다르면 별도 수정된 것)
+        const ledgerAmount = parseAmount(entryAmount) !== originalNum
+          ? parseAmount(entryAmount)
+          : approvedNum;
         body.entryOverrides = {
           date: entryDate,
           description: entryDesc,
-          income: cat?.type === 'income' ? amount : 0,
-          expense: cat?.type === 'expense' ? amount : 0,
+          income: cat?.type === 'income' ? ledgerAmount : 0,
+          expense: cat?.type === 'expense' ? ledgerAmount : 0,
           category_id: entryCategoryId,
         };
       }
@@ -206,6 +227,7 @@ export default function PendingReceiptsPage() {
         throw new Error(json.error || '승인에 실패했습니다');
       }
       toast.success('승인되었습니다');
+      setPendingTotal(prev => prev - receipt.final_amount);
       setReceipts(prev => prev.filter(r => r.id !== receipt.id));
       setTotal(prev => prev - 1);
       selectedIds.delete(receipt.id);
@@ -217,6 +239,26 @@ export default function PendingReceiptsPage() {
       setApprovingId(null);
     }
   };
+
+  // Ctrl+Enter / Cmd+Enter 단축키 — 승인 모달이 열려있을 때만 동작
+  const handleApproveRef = useRef(handleApprove);
+  handleApproveRef.current = handleApprove;
+
+  useEffect(() => {
+    if (!approveModal.open) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      // 조건 미충족이면 무시
+      if (checkingLink || !!approvingId) return;
+      if (!alreadyLinkedEntry && linkMode === 'existing' && !selectedEntryId) return;
+      e.preventDefault();
+      handleApproveRef.current();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [approveModal.open, checkingLink, approvingId, alreadyLinkedEntry, linkMode, selectedEntryId]);
 
   // Reject
   const handleReject = async () => {
@@ -233,6 +275,8 @@ export default function PendingReceiptsPage() {
         throw new Error(json.error || '반려에 실패했습니다');
       }
       toast.success('반려되었습니다');
+      const rejected = receipts.find(r => r.id === rejectingId);
+      if (rejected) setPendingTotal(prev => prev - rejected.final_amount);
       setReceipts(prev => prev.filter(r => r.id !== rejectingId));
       setTotal(prev => prev - 1);
       selectedIds.delete(rejectingId);
@@ -256,6 +300,8 @@ export default function PendingReceiptsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       toast.success(json.data.message);
+      const deletedAmount = receipts.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + r.final_amount, 0);
+      setPendingTotal(prev => prev - deletedAmount);
       setReceipts(prev => prev.filter(r => !selectedIds.has(r.id)));
       setTotal(prev => prev - selectedIds.size);
       setSelectedIds(new Set());
@@ -284,6 +330,8 @@ export default function PendingReceiptsPage() {
         throw new Error(json.error || '일괄 승인에 실패했습니다');
       }
       toast.success(`${ids.length}건이 승인되었습니다`);
+      const approvedAmount = receipts.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + r.final_amount, 0);
+      setPendingTotal(prev => prev - approvedAmount);
       setReceipts(prev => prev.filter(r => !selectedIds.has(r.id)));
       setTotal(prev => prev - ids.length);
       setSelectedIds(new Set());
@@ -314,6 +362,60 @@ export default function PendingReceiptsPage() {
           )}
         </div>
 
+        {!loading && receipts.length > 0 && (() => {
+          // 제출자별 그룹화
+          const groups: Record<string, { name: string; items: ReceiptWithUser[] }> = {};
+          for (const r of receipts) {
+            const name = r.submitter?.name ?? '알 수 없음';
+            if (!groups[name]) groups[name] = { name, items: [] };
+            groups[name].items.push(r);
+          }
+          const groupList = Object.values(groups);
+          const grandTotal = groupList.reduce((s, g) => s + g.items.reduce((ss, r) => ss + r.final_amount, 0), 0);
+
+          return (
+            <div className="bg-orange-50 border border-orange-300 rounded-xl mb-4 overflow-hidden">
+              {/* 전체 합계 헤더 */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-orange-200">
+                <span className="text-sm font-semibold text-orange-900">
+                  총 정산요청금액 <span className="text-xs font-normal text-orange-600">({receipts.length}건)</span>
+                </span>
+                <span className="text-xl font-bold text-orange-700">{formatCurrency(grandTotal)}</span>
+              </div>
+              {/* 제출자별 상세 */}
+              <div className="divide-y divide-orange-100">
+                {groupList.map((g) => {
+                  const groupTotal = g.items.reduce((s, r) => s + r.final_amount, 0);
+                  return (
+                    <div key={g.name} className="px-5 py-3">
+                      {/* 제출자 요약 행 */}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-orange-800">
+                          {g.name}
+                          <span className="ml-1.5 text-xs font-normal text-orange-500">{g.items.length}건</span>
+                        </span>
+                        <span className="text-sm font-bold text-orange-700">{formatCurrency(groupTotal)}</span>
+                      </div>
+                      {/* 개별 영수증 목록 */}
+                      <ol className="space-y-0.5 pl-1">
+                        {g.items.map((r, idx) => (
+                          <li key={r.id} className="flex items-center justify-between text-xs text-orange-700">
+                            <span className="flex items-center gap-1.5">
+                              <span className="text-orange-400 tabular-nums">{idx + 1}.</span>
+                              <span className="truncate max-w-[180px]">{r.description}</span>
+                            </span>
+                            <span className="font-medium tabular-nums shrink-0 ml-2">{formatCurrency(r.final_amount)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {loading ? (
           <div className="bg-white rounded-xl shadow-sm p-6 animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-full mb-4" />
@@ -328,10 +430,37 @@ export default function PendingReceiptsPage() {
           />
         ) : (
           <>
+            {(() => {
+              // 같은 제출자 + 같은 금액이 pending 목록 내에 2건 이상이면 중복 경고
+              const seen = new Map<string, string>();
+              const withinPendingDupeIds = new Set<string>();
+              for (const r of receipts) {
+                const key = `${r.submitted_by}:${r.final_amount}`;
+                if (seen.has(key)) {
+                  withinPendingDupeIds.add(r.id);
+                  withinPendingDupeIds.add(seen.get(key)!);
+                } else {
+                  seen.set(key, r.id);
+                }
+              }
+
+              const isDupe = (r: ReceiptWithUser) =>
+                !!(r as any).has_duplicate_warning || withinPendingDupeIds.has(r.id);
+
+              const dupeLabel = (r: ReceiptWithUser) =>
+                withinPendingDupeIds.has(r.id)
+                  ? '같은 금액의 영수증이 중복 제출되었습니다'
+                  : '이미 승인된 내역과 중복될 수 있습니다';
+
+              return (
+                <>
             {/* Mobile card view */}
             <div className="md:hidden space-y-3">
               {receipts.map(receipt => (
-                <div key={receipt.id} className="bg-white rounded-xl shadow-sm p-4">
+                <div
+                  key={receipt.id}
+                  className={`bg-white rounded-xl shadow-sm p-4 ${isDupe(receipt) ? 'border-l-4 border-amber-400' : ''}`}
+                >
                   <div className="flex items-start gap-3">
                     <input
                       type="checkbox"
@@ -340,6 +469,12 @@ export default function PendingReceiptsPage() {
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                     />
                     <div className="flex-1 min-w-0">
+                      {isDupe(receipt) && (
+                        <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1.5 mb-2">
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span className="text-xs font-medium text-amber-800">{dupeLabel(receipt)}</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs text-gray-500">
                           {receipt.submitter?.name ?? '알 수 없음'}
@@ -359,6 +494,13 @@ export default function PendingReceiptsPage() {
                           <span className="text-xs text-gray-500">{receipt.category.name}</span>
                         )}
                       </div>
+                      {(receipt as any).bank_name && (
+                        <div className="mt-1.5 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 space-y-0.5">
+                          <p className="font-medium text-gray-600">송금 계좌</p>
+                          <p>{(receipt as any).bank_name} · {(receipt as any).account_holder}</p>
+                          <p className="font-mono">{(receipt as any).account_number}</p>
+                        </div>
+                      )}
                       {receipt.image_url && (
                         <button
                           type="button"
@@ -411,14 +553,15 @@ export default function PendingReceiptsPage() {
                       <th className="px-4 py-3 text-left font-medium text-gray-600">내용</th>
                       <th className="px-4 py-3 text-right font-medium text-gray-600">금액</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">카테고리</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">계좌</th>
                       <th className="px-4 py-3 text-center font-medium text-gray-600">이미지</th>
                       <th className="px-4 py-3 text-center font-medium text-gray-600">액션</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {receipts.map(receipt => (
-                      <tr key={receipt.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
+                      <tr key={receipt.id} className={isDupe(receipt) ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}>
+                        <td className={`px-4 py-3 ${isDupe(receipt) ? 'border-l-4 border-amber-400' : ''}`}>
                           <input
                             type="checkbox"
                             checked={selectedIds.has(receipt.id)}
@@ -427,19 +570,33 @@ export default function PendingReceiptsPage() {
                           />
                         </td>
                         <td className="px-4 py-3 text-gray-900">
-                          {receipt.submitter?.name ?? '알 수 없음'}
+                          <div className="flex items-center gap-1.5">
+                            {isDupe(receipt) && <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
+                            {receipt.submitter?.name ?? '알 수 없음'}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                           {formatDate(receipt.date)}
                         </td>
-                        <td className="px-4 py-3 text-gray-900 max-w-[200px] truncate">
-                          {receipt.description}
+                        <td className="px-4 py-3 text-gray-900 max-w-[200px]">
+                          <p className="truncate">{receipt.description}</p>
+                          {isDupe(receipt) && (
+                            <p className="text-xs text-amber-700 font-medium mt-0.5">{dupeLabel(receipt)}</p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 whitespace-nowrap">
                           {formatCurrency(receipt.final_amount)}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
                           {receipt.category?.name ?? '-'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {(receipt as any).bank_name ? (
+                            <div className="space-y-0.5">
+                              <p>{(receipt as any).bank_name} · {(receipt as any).account_holder}</p>
+                              <p className="font-mono text-gray-400">{(receipt as any).account_number}</p>
+                            </div>
+                          ) : <span className="text-gray-300">-</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {receipt.image_url ? (
@@ -483,6 +640,9 @@ export default function PendingReceiptsPage() {
                 </table>
               </div>
             </div>
+                </>
+              );
+            })()}
           </>
         )}
 
@@ -605,10 +765,39 @@ export default function PendingReceiptsPage() {
                 <span className="text-gray-500">내용</span>
                 <span className="font-medium text-gray-900">{approveModal.receipt.description}</span>
               </div>
+              {/* 제출 금액 (수정 불가) */}
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">금액</span>
-                <span className="font-semibold text-gray-900">{formatCurrency(approveModal.receipt.final_amount)}</span>
+                <span className="text-gray-500">제출 금액 <span className="text-xs text-gray-400">(수정 전)</span></span>
+                <span className="font-semibold text-gray-400 line-through decoration-gray-400">
+                  {formatCurrency(approveModal.receipt.final_amount)}
+                </span>
               </div>
+            </div>
+
+            {/* 승인 금액 (수정 가능) */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-800">
+                  승인 금액 <span className="text-xs font-normal text-blue-500">(통장 확인 후 수정 가능)</span>
+                </span>
+                {parseAmount(approvedAmount) !== approveModal.receipt.final_amount && (
+                  <span className="text-xs bg-orange-100 text-orange-700 border border-orange-200 rounded px-2 py-0.5 font-medium">
+                    수정됨
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={approvedAmount}
+                onChange={(e) => {
+                  const v = formatAmount(e.target.value);
+                  setApprovedAmount(v);
+                  setEntryAmount(v);
+                }}
+                className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-right tabular-nums
+                  focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+              />
             </div>
 
             {/* 이미 연동 확인 중 */}
@@ -651,18 +840,18 @@ export default function PendingReceiptsPage() {
                   <p className="text-sm font-medium text-gray-700 mb-3">장부 처리 방식</p>
                   <div className="flex gap-3">
                     <label className={`flex-1 flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
-                      ${linkMode === 'new' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
-                      <input type="radio" className="sr-only" checked={linkMode === 'new'} onChange={() => setLinkMode('new')} />
-                      <PlusCircle className="h-4 w-4 shrink-0" />
-                      <span className="text-sm font-medium">새 항목 추가</span>
-                    </label>
-                    <label className={`flex-1 flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
                       ${linkMode === 'existing' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}
-                      onClick={() => { if (linkMode !== 'existing') { setLinkMode('existing'); loadLedgerEntries(); } }}
+                      onClick={() => { if (linkMode !== 'existing') { setLinkMode('existing'); if (ledgerEntries.length === 0) loadLedgerEntries(); } }}
                     >
                       <input type="radio" className="sr-only" checked={linkMode === 'existing'} onChange={() => {}} />
                       <Link2 className="h-4 w-4 shrink-0" />
                       <span className="text-sm font-medium">기존 항목 연동</span>
+                    </label>
+                    <label className={`flex-1 flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all
+                      ${linkMode === 'new' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
+                      <input type="radio" className="sr-only" checked={linkMode === 'new'} onChange={() => setLinkMode('new')} />
+                      <PlusCircle className="h-4 w-4 shrink-0" />
+                      <span className="text-sm font-medium">새 항목 추가</span>
                     </label>
                   </div>
                 </div>
@@ -729,44 +918,72 @@ export default function PendingReceiptsPage() {
                 )}
 
                 {/* 기존 항목 목록 */}
-                {linkMode === 'existing' && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">연동할 장부 항목을 선택하세요</p>
-                    {loadingEntries ? (
-                      <div className="space-y-2">
-                        {[...Array(3)].map((_, i) => (
-                          <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
-                        ))}
-                      </div>
-                    ) : ledgerEntries.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-4">장부 항목이 없습니다</p>
-                    ) : (
-                      <div className="max-h-52 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
-                        {ledgerEntries.map(entry => (
-                          <label
-                            key={entry.id}
-                            className={`flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer transition-colors
-                              ${selectedEntryId === entry.id ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                {linkMode === 'existing' && (() => {
+                  const targetAmount = parseAmount(approvedAmount) || approveModal.receipt?.final_amount || 0;
+                  // 이미 연동된 항목 및 수입 항목 제외
+                  const available = ledgerEntries.filter(e => !e.receipt_id && (e.expense || 0) > 0);
+                  return (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2">연동할 장부 항목을 선택하세요</p>
+                      {loadingEntries ? (
+                        <div className="space-y-2">
+                          {[...Array(3)].map((_, i) => (
+                            <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                          ))}
+                        </div>
+                      ) : available.length === 0 ? (
+                        <div className="text-center py-4 space-y-1">
+                          <p className="text-sm text-gray-400">연동 가능한 항목이 없습니다</p>
+                          <button
+                            type="button"
+                            onClick={() => setLinkMode('new')}
+                            className="text-xs text-primary-600 underline"
                           >
-                            <input
-                              type="radio"
-                              name="entry"
-                              className="h-4 w-4 text-primary-600"
-                              checked={selectedEntryId === entry.id}
-                              onChange={() => setSelectedEntryId(entry.id)}
-                            />
-                            <span className="text-xs text-gray-400 shrink-0">{formatDate(entry.date)}</span>
-                            <span className="text-sm flex-1 truncate">{entry.description}</span>
-                            <span className="text-sm font-medium shrink-0">{formatCurrency(entry.expense || entry.income)}</span>
-                            {entry.receipt_id && (
-                              <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">연동됨</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                            새 항목 추가로 전환
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="max-h-52 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
+                          {available.map(entry => {
+                            const entryAmt = entry.expense || entry.income;
+                            const isMatch = entryAmt === targetAmount;
+                            const isSelected = selectedEntryId === entry.id;
+                            return (
+                              <label
+                                key={entry.id}
+                                className={`flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer transition-colors border
+                                  ${isSelected
+                                    ? 'border-primary-400 bg-primary-50 text-primary-700'
+                                    : isMatch
+                                    ? 'border-success-300 bg-success-50 text-success-800 hover:bg-success-100'
+                                    : 'border-transparent hover:bg-gray-50 text-gray-700'
+                                  }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="entry"
+                                  className="h-4 w-4 text-primary-600 shrink-0"
+                                  checked={isSelected}
+                                  onChange={() => setSelectedEntryId(entry.id)}
+                                />
+                                <span className="text-xs text-gray-400 shrink-0">{formatDate(entry.date)}</span>
+                                <span className="text-sm flex-1 truncate">{entry.description}</span>
+                                <span className={`text-sm font-semibold shrink-0 ${isMatch ? 'text-success-700' : ''}`}>
+                                  {formatCurrency(entryAmt)}
+                                </span>
+                                {isMatch && (
+                                  <span className="text-[10px] bg-success-100 text-success-700 border border-success-300 px-1.5 py-0.5 rounded font-medium shrink-0">
+                                    금액일치
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
 

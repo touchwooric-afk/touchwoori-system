@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -11,12 +12,12 @@ import {
   Users,
   Tags,
   BadgeCheck,
-  CalendarRange,
   UserCircle,
-  History,
   Upload,
   PlusCircle,
 } from 'lucide-react';
+import { useUser } from '@/hooks/useUser';
+import { createClient } from '@/lib/supabase';
 import type { Role } from '@/types';
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
+  badge?: number;
 }
 
 interface NavGroup {
@@ -34,7 +36,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-function getNavGroups(role: Role): NavGroup[] {
+function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: number, rejectedCount?: number): NavGroup[] {
   const groups: NavGroup[] = [];
 
   // 공통: 대시보드
@@ -55,10 +57,9 @@ function getNavGroups(role: Role): NavGroup[] {
     groups.push({
       title: '시스템 관리',
       items: [
-        { label: '사용자 관리', href: '/master/users', icon: Users },
+        { label: '사용자 관리', href: '/master/users', icon: Users, badge: pendingUserCount },
         { label: '카테고리 관리', href: '/master/categories', icon: Tags },
         { label: '직분 관리', href: '/master/positions', icon: BadgeCheck },
-        { label: '결산기 관리', href: '/master/settlements', icon: CalendarRange },
       ],
     });
   }
@@ -68,7 +69,7 @@ function getNavGroups(role: Role): NavGroup[] {
     groups.push({
       title: '운영',
       items: [
-        { label: '사용자 관리', href: '/master/users', icon: Users },
+        { label: '사용자 관리', href: '/master/users', icon: Users, badge: pendingUserCount },
       ],
     });
   }
@@ -79,10 +80,10 @@ function getNavGroups(role: Role): NavGroup[] {
       title: '영수증',
       items: [
         { label: '영수증 제출', href: '/receipts/upload', icon: Upload },
-        { label: '내 제출 내역', href: '/receipts/my', icon: ClipboardList },
+        { label: '내 제출 내역', href: '/receipts/my', icon: ClipboardList, badge: rejectedCount },
         ...(canWrite
           ? [
-              { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList },
+              { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList, badge: pendingCount },
               { label: '직접 입력', href: '/receipts/new', icon: PlusCircle },
             ]
           : []),
@@ -108,8 +109,7 @@ function getNavGroups(role: Role): NavGroup[] {
   groups.push({
     title: '결산',
     items: [
-      { label: '결산 PDF', href: '/settlements', icon: FileText },
-      { label: '감사 내역', href: '/settlements/history', icon: History },
+      { label: '결산 및 지출증빙', href: '/settlements', icon: FileText },
     ],
   });
 
@@ -118,10 +118,64 @@ function getNavGroups(role: Role): NavGroup[] {
 
 export default function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname();
-  const navGroups = getNavGroups(role);
+  const { user } = useUser();
+  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingUserCount, setPendingUserCount] = useState(0);
+  const [rejectedCount, setRejectedCount] = useState(0);
+
+  useEffect(() => {
+    if (role !== 'accountant' && role !== 'master') return;
+    if (!user) return;
+
+    const supabase = createClient();
+    let query = supabase
+      .from('receipts')
+      .select('id')
+      .eq('status', 'pending');
+
+    // accountant는 본인 부서만
+    if (role === 'accountant' && user.department_id) {
+      query = query.eq('department_id', user.department_id);
+    }
+
+    query.then(({ data, error }) => {
+      const n = error ? 0 : (data?.length ?? 0);
+      setPendingCount(n);
+    });
+  }, [role, user]);
+
+  // 승인 대기 신규 사용자 수 (master / sub_master)
+  useEffect(() => {
+    if (role !== 'master' && role !== 'sub_master') return;
+
+    const supabase = createClient();
+    supabase
+      .from('users')
+      .select('id')
+      .eq('status', 'pending')
+      .then(({ data, error }) => {
+        setPendingUserCount(error ? 0 : (data?.length ?? 0));
+      });
+  }, [role]);
+
+  // 반려된 내 영수증 수
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+    supabase
+      .from('receipts')
+      .select('id')
+      .eq('submitted_by', user.id)
+      .eq('status', 'rejected')
+      .then(({ data, error }) => {
+        setRejectedCount(error ? 0 : (data?.length ?? 0));
+      });
+  }, [user]);
+
+  const navGroups = getNavGroups(role, pendingCount, pendingUserCount, rejectedCount);
 
   return (
-    <aside className="hidden md:flex md:w-56 md:flex-col md:fixed md:inset-y-0 md:pt-16 bg-white border-r border-gray-200">
+    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 bg-white border-r border-gray-200">
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => (
           <div key={group.title}>
@@ -150,6 +204,27 @@ export default function Sidebar({ role }: SidebarProps) {
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       {item.label}
+                      {item.badge != null && item.badge > 0 && (
+                        <span
+                          style={{
+                            marginLeft: 'auto',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            backgroundColor: '#ef4444',
+                            color: '#fff',
+                            borderRadius: '9999px',
+                            padding: '2px 6px',
+                            minWidth: '18px',
+                            textAlign: 'center',
+                            lineHeight: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );

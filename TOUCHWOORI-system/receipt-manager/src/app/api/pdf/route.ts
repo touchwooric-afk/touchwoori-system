@@ -69,12 +69,22 @@ export async function POST(request: NextRequest) {
       targetLedgerId = mainLedger.id;
     }
 
-    // 지출 항목 조회 (expense > 0) — receipt_id 경유로 image_url 명시 조인
-    const { data: entries, error } = await supabase
+    // 이월 잔액: startDate 이전의 모든 항목 합산 (수입 - 지출)
+    const { data: priorEntries } = await supabase
+      .from('ledger_entries')
+      .select('income, expense')
+      .eq('ledger_id', targetLedgerId)
+      .lt('date', startDate);
+
+    const carryoverBalance = (priorEntries || []).reduce(
+      (sum, e) => sum + (e.income || 0) - (e.expense || 0), 0
+    );
+
+    // 기간 내 전체 항목 조회 (수입 + 지출 모두)
+    const { data: allEntries, error } = await supabase
       .from('ledger_entries')
       .select('*, categories(*), receipts!receipt_id(id, image_url)')
       .eq('ledger_id', targetLedgerId)
-      .gt('expense', 0)
       .gte('date', startDate)
       .lte('date', endDate)
       .order('date', { ascending: true })
@@ -84,34 +94,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `데이터 조회에 실패했습니다: ${error.message}` }, { status: 500 });
     }
 
-    // 카테고리별 요약 집계
-    const categoryMap = new Map<string, { category: string; total: number }>();
-    const items = (entries || []).map((entry) => {
+    // 카테고리별 수입/지출 합계 집계
+    const incomeCatMap = new Map<string, { category: string; total: number }>();
+    const expenseCatMap = new Map<string, { category: string; total: number }>();
+
+    const incomeItems: Array<{ date: string; description: string; amount: number; categoryName: string }> = [];
+    const expenseItems: Array<{ date: string; description: string; amount: number; categoryName: string; imageUrl: string | null }> = [];
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (const entry of allEntries || []) {
       const categoryName = entry.categories?.name || '미분류';
 
-      if (categoryMap.has(categoryName)) {
-        categoryMap.get(categoryName)!.total += entry.expense;
-      } else {
-        categoryMap.set(categoryName, { category: categoryName, total: entry.expense });
+      if ((entry.income || 0) > 0) {
+        totalIncome += entry.income;
+        const existing = incomeCatMap.get(categoryName);
+        if (existing) existing.total += entry.income;
+        else incomeCatMap.set(categoryName, { category: categoryName, total: entry.income });
+
+        incomeItems.push({
+          date: entry.date,
+          description: entry.description,
+          amount: entry.income,
+          categoryName,
+        });
       }
 
-      return {
-        date: entry.date,
-        description: entry.description,
-        expense: entry.expense,
-        categoryName,
-        imageUrl: entry.receipts?.image_url || null,
-      };
-    });
+      if ((entry.expense || 0) > 0) {
+        totalExpense += entry.expense;
+        const existing = expenseCatMap.get(categoryName);
+        if (existing) existing.total += entry.expense;
+        else expenseCatMap.set(categoryName, { category: categoryName, total: entry.expense });
 
-    const summary = Array.from(categoryMap.values()).sort((a, b) => b.total - a.total);
+        expenseItems.push({
+          date: entry.date,
+          description: entry.description,
+          amount: entry.expense,
+          categoryName,
+          imageUrl: entry.receipts?.image_url || null,
+        });
+      }
+    }
+
+    const incomeSummary = Array.from(incomeCatMap.values()).sort((a, b) => b.total - a.total);
+    const expenseSummary = Array.from(expenseCatMap.values()).sort((a, b) => b.total - a.total);
+    const endingBalance = carryoverBalance + totalIncome - totalExpense;
 
     return NextResponse.json({
       data: {
         title: title || `정산서 (${startDate} ~ ${endDate})`,
         period: { startDate, endDate },
-        summary,
-        items,
+        carryoverBalance,
+        totalIncome,
+        totalExpense,
+        endingBalance,
+        incomeSummary,
+        expenseSummary,
+        incomeItems,
+        expenseItems,
       },
     });
   } catch (err) {

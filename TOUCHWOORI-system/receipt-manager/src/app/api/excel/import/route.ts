@@ -55,14 +55,53 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
       }
 
-      const insertData = entries.map((entry: {
+      // 기존 항목 조회 → 중복 키 셋 구성 (날짜+항목명+금액)
+      const { data: existingEntries } = await supabase
+        .from('ledger_entries')
+        .select('date, description, income, expense')
+        .eq('ledger_id', ledgerId);
+
+      const nd = (s: string) => s.trim().replace(/\s+/g, ' ');
+
+      const existingKeys = new Set(
+        (existingEntries || []).map((e) =>
+          `${e.date}|${nd(e.description)}|${e.income || 0}|${e.expense || 0}`
+        )
+      );
+
+      type EntryInput = {
         date: string;
         description: string;
         income: number;
         expense: number;
         category_id: string;
         memo?: string;
-      }) => ({
+      };
+
+      const newEntries: EntryInput[] = [];
+      const skippedEntries: EntryInput[] = [];
+
+      for (const entry of entries as EntryInput[]) {
+        const key = `${entry.date}|${nd(entry.description)}|${entry.income || 0}|${entry.expense || 0}`;
+        if (existingKeys.has(key)) {
+          skippedEntries.push(entry);
+        } else {
+          newEntries.push(entry);
+        }
+      }
+
+      if (newEntries.length === 0) {
+        return NextResponse.json({
+          data: {
+            message: `추가된 항목이 없습니다 (${skippedEntries.length}건 중복 스킵)`,
+            entries: [],
+            insertedCount: 0,
+            skippedCount: skippedEntries.length,
+          },
+        }, { status: 201 });
+      }
+
+      const insertData = newEntries.map((entry) => ({
         ledger_id: ledgerId,
         date: entry.date,
         description: entry.description,
@@ -87,15 +126,19 @@ export async function POST(request: NextRequest) {
       await supabase.from('excel_syncs').insert({
         type: 'import',
         filename: 'excel_import.xlsx',
-        row_count: insertData.length,
+        row_count: data.length,
         status: 'success',
+        ledger_id: ledgerId,
         created_by: authUser.id,
       });
 
+      const skippedMsg = skippedEntries.length > 0 ? ` (${skippedEntries.length}건 중복 스킵)` : '';
       return NextResponse.json({
         data: {
-          message: `${data.length}건의 항목이 등록되었습니다`,
+          message: `${data.length}건 추가됨${skippedMsg}`,
           entries: data,
+          insertedCount: data.length,
+          skippedCount: skippedEntries.length,
         },
       }, { status: 201 });
     }
@@ -154,6 +197,28 @@ export async function POST(request: NextRequest) {
       return null;
     };
 
+    // 기존 항목 조회 → 중복 키 셋 구성
+    const { data: existingEntries } = await supabase
+      .from('ledger_entries')
+      .select('date, description, income, expense')
+      .eq('ledger_id', ledgerId);
+
+    // 설명 정규화: 앞뒤 공백 제거 + 내부 연속 공백 → 단일 공백
+    const normalizeDesc = (s: string) => s.trim().replace(/\s+/g, ' ');
+
+    // 완전 중복 키: 날짜+설명+금액
+    const existingKeys = new Set(
+      (existingEntries || []).map((e) =>
+        `${e.date}|${normalizeDesc(e.description)}|${e.income || 0}|${e.expense || 0}`
+      )
+    );
+    // 날짜+금액 키: 설명이 달라도 경고용
+    const existingAmountKeys = new Set(
+      (existingEntries || []).map((e) =>
+        `${e.date}|${e.income || 0}|${e.expense || 0}`
+      )
+    );
+
     // 엑셀 파싱
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
@@ -167,35 +232,65 @@ export async function POST(request: NextRequest) {
 
     // 컬럼 매핑
     const preview = jsonData.map((row, index) => {
-      // 항목명: 첫 번째 '항목' 컬럼. 중복 컬럼은 XLSX이 '항목', '항목_1'로 구분.
       const description = (row['항목'] || row['설명'] || row['내용'] || '') as string;
-      // 수입: 입금액 / 수입액 / 수입
-      const income = parseFloat(String(row['입금액'] || row['수입액'] || row['수입'] || 0)) || 0;
-      // 지출: 출금액 / 지출액 / 지출
-      const expense = parseFloat(String(row['출금액'] || row['지출액'] || row['지출'] || 0)) || 0;
-      // 카테고리: 두 번째 '항목' 컬럼(중복으로 '항목_1') 또는 '카테고리', '분류'
+      // 콤마 포함 텍스트 셀 대응 ("941,521" → 941521)
+      const parseAmt = (v: unknown) => parseFloat(String(v).replace(/,/g, '')) || 0;
+      const income = parseAmt(row['입금액'] ?? row['수입액'] ?? row['수입'] ?? 0);
+      const expense = parseAmt(row['출금액'] ?? row['지출액'] ?? row['지출'] ?? 0);
       const categoryName = (row['항목_1'] || row['카테고리'] || row['분류'] || '') as string;
-      // 정규화 이름 매칭 → 키워드 폴백 매칭 순서로 시도
       const categoryId =
         categoryNameMap.get(normalize(categoryName)) ||
         matchCategoryByKeyword(categoryName) ||
         null;
 
-      // 날짜 파싱
       let date = '';
       const rawDate = row['날짜'] || row['일자'];
       if (rawDate) {
         if (typeof rawDate === 'number') {
-          // 엑셀 시리얼 넘버
-          const excelDate = XLSX.SSF.parse_date_code(rawDate);
-          date = `${excelDate.y}-${String(excelDate.m).padStart(2, '0')}-${String(excelDate.d).padStart(2, '0')}`;
+          // 6자리 숫자 YYMMDD (e.g. 251201 → 2025-12-01)
+          const n = rawDate;
+          if (n >= 100000 && n <= 999999) {
+            const yy = Math.floor(n / 10000);
+            const mm = Math.floor((n % 10000) / 100);
+            const dd = n % 100;
+            const yyyy = yy <= 99 ? 2000 + yy : yy;
+            date = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+          } else {
+            // 엑셀 시리얼 넘버
+            const excelDate = XLSX.SSF.parse_date_code(rawDate);
+            date = `${excelDate.y}-${String(excelDate.m).padStart(2, '0')}-${String(excelDate.d).padStart(2, '0')}`;
+          }
         } else {
-          const parsed = new Date(String(rawDate));
-          if (!isNaN(parsed.getTime())) {
-            date = parsed.toISOString().split('T')[0];
+          const s = String(rawDate).trim();
+          // YYMMDD 또는 YYYYMMDD 숫자 문자열
+          const compact = s.replace(/[-./]/g, '');
+          if (/^\d{6}$/.test(compact)) {
+            const yy = parseInt(compact.slice(0, 2), 10);
+            const mm = compact.slice(2, 4);
+            const dd = compact.slice(4, 6);
+            date = `${2000 + yy}-${mm}-${dd}`;
+          } else if (/^\d{8}$/.test(compact)) {
+            date = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+          } else {
+            // "M월 D일" 형식
+            const korean = s.match(/(\d{1,4})년?\s*(\d{1,2})월\s*(\d{1,2})일/);
+            if (korean) {
+              const y = korean[1].length <= 2 ? 2000 + parseInt(korean[1], 10) : parseInt(korean[1], 10);
+              date = `${y}-${String(parseInt(korean[2], 10)).padStart(2, '0')}-${String(parseInt(korean[3], 10)).padStart(2, '0')}`;
+            } else {
+              const parsed = new Date(s);
+              if (!isNaN(parsed.getTime())) {
+                date = parsed.toISOString().split('T')[0];
+              }
+            }
           }
         }
       }
+
+      const isValid = !!(date && description && (income > 0 || expense > 0));
+      const isDuplicate = isValid && existingKeys.has(`${date}|${normalizeDesc(String(description))}|${income}|${expense}`);
+      // 날짜+금액 일치하지만 설명이 다른 경우 → 경고
+      const isSimilar = isValid && !isDuplicate && existingAmountKeys.has(`${date}|${income}|${expense}`);
 
       return {
         rowIndex: index + 1,
@@ -205,8 +300,9 @@ export async function POST(request: NextRequest) {
         expense,
         categoryName: categoryName || null,
         categoryId,
-        // 날짜 + 항목명 + 금액(수입 or 지출) 모두 있어야 유효
-        isValid: !!(date && description && (income > 0 || expense > 0)),
+        isValid,
+        isDuplicate,
+        isSimilar,
       };
     });
 
@@ -214,7 +310,8 @@ export async function POST(request: NextRequest) {
       data: {
         filename: file.name,
         totalRows: preview.length,
-        validRows: preview.filter((r) => r.isValid).length,
+        validRows: preview.filter((r) => r.isValid && !r.isDuplicate).length,
+        duplicateRows: preview.filter((r) => r.isDuplicate).length,
         ledgerId,
         preview,
       },

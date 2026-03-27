@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@/hooks/useUser';
 import { useHotkey } from '@/hooks/useShortcutKey';
@@ -50,7 +50,7 @@ const EMPTY_ROW = (prevDate?: string): EntryRow => ({
 type SortField = 'date' | 'income' | 'expense' | 'category';
 type SortDir = 'asc' | 'desc';
 
-export default function LedgerPage() {
+function LedgerPageInner() {
   const { user } = useUser();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -64,6 +64,10 @@ export default function LedgerPage() {
   const [total, setTotal] = useState(0);
   const [totalIncome, setTotalIncome]   = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
+  const [totalAll, setTotalAll]                 = useState(0);
+  const [totalIncomeEntries, setTotalIncomeEntries] = useState(0);
+  const [totalLinked, setTotalLinked]           = useState(0);
+  const [totalUnlinked, setTotalUnlinked] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
 
@@ -73,7 +77,7 @@ export default function LedgerPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [searchText, setSearchText] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [filterReceipt, setFilterReceipt] = useState<'all' | 'linked' | 'unlinked'>('all');
+  const [filterReceipt, setFilterReceipt] = useState<'all' | 'income-all' | 'expense-all' | 'linked' | 'unlinked'>('all');
 
   // Sort
   const [sortField, setSortField] = useState<SortField>('date');
@@ -93,6 +97,7 @@ export default function LedgerPage() {
   const [receiptImageModal, setReceiptImageModal] = useState<{ open: boolean; imageUrl: string; receiptId: string }>({
     open: false, imageUrl: '', receiptId: '',
   });
+  const [hoverPreviewUrl, setHoverPreviewUrl] = useState<string | null>(null);
 
   // Edit modal
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -111,7 +116,7 @@ export default function LedgerPage() {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
-  const isEditor = user?.role === 'accountant' || user?.role === 'master';
+  const isEditor = user?.role === 'accountant' || user?.role === 'master' || user?.role === 'sub_master';
 
   // 엑셀 내보내기
   const [exporting, setExporting] = useState(false);
@@ -204,6 +209,7 @@ export default function LedgerPage() {
       if (endDate) params.set('endDate', endDate);
       if (filterCategory) params.set('categoryId', filterCategory);
       if (searchText) params.set('search', searchText);
+      if (filterReceipt !== 'all') params.set('receiptFilter', filterReceipt);
 
       const res = await fetch(`/api/ledgers/${selectedLedgerId}/entries?${params}`);
       const json = await res.json();
@@ -212,12 +218,16 @@ export default function LedgerPage() {
       setTotal(json.total || 0);
       setTotalIncome(json.totalIncome  || 0);
       setTotalExpense(json.totalExpense || 0);
+      setTotalAll(json.totalAll                       || 0);
+      setTotalIncomeEntries(json.totalIncomeEntries   || 0);
+      setTotalLinked(json.totalLinked                 || 0);
+      setTotalUnlinked(json.totalUnlinked || 0);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '장부 항목을 불러올 수 없습니다');
     } finally {
       setLoading(false);
     }
-  }, [selectedLedgerId, page, startDate, endDate, filterCategory, searchText, toast]);
+  }, [selectedLedgerId, page, startDate, endDate, filterCategory, searchText, filterReceipt, toast]);
 
   useEffect(() => {
     fetchLedgers();
@@ -230,11 +240,6 @@ export default function LedgerPage() {
       fetchEntries();
     }
   }, [selectedLedgerId, fetchEntries]);
-
-  // 영수증 연동 현황
-  const expenseEntries = entries.filter((e) => e.expense > 0);
-  const linkedCount    = expenseEntries.filter((e) => e.receipt_id).length;
-  const unlinkedCount  = expenseEntries.filter((e) => !e.receipt_id).length;
 
   // Client-side sort
   const sortedEntries = [...entries].sort((a, b) => {
@@ -272,10 +277,6 @@ export default function LedgerPage() {
       default:
         return 0;
     }
-  }).filter((e) => {
-    if (filterReceipt === 'linked')   return !!e.receipt_id;
-    if (filterReceipt === 'unlinked') return !e.receipt_id;
-    return true;
   });
 
   const handleSort = (field: SortField) => {
@@ -435,7 +436,6 @@ export default function LedgerPage() {
   // ─── Edit modal ───
   const openEditModal = (entry: LedgerEntryWithBalance) => {
     if (!isEditor) return;
-    if (entry.source === 'receipt') return; // receipts are read-only in ledger
     setEditEntry(entry);
     setEditForm({
       date: entry.date,
@@ -714,7 +714,7 @@ export default function LedgerPage() {
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder="항목명 검색"
+                  placeholder="항목명 또는 금액 검색"
                   className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm
                     focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                     outline-none transition-shadow"
@@ -730,16 +730,18 @@ export default function LedgerPage() {
         {/* 영수증 연동 현황 + 필터 */}
         {!loading && entries.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm px-5 py-3 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-gray-500 font-medium shrink-0">영수증 연동</span>
+            <span className="text-sm text-gray-500 font-medium shrink-0">항목 보기</span>
             <div className="flex gap-1.5 flex-wrap flex-1">
               {([
-                { key: 'all'     as const, label: `전체 ${entries.length}건`,  active: 'bg-primary-50 border-primary-400 text-primary-700' },
-                { key: 'linked'  as const, label: `연동됨 ${linkedCount}건`,   active: 'bg-emerald-50 border-emerald-400 text-emerald-700' },
-                { key: 'unlinked'as const, label: `미연동 ${unlinkedCount}건`, active: 'bg-amber-50 border-amber-400 text-amber-700' },
+                { key: 'all'         as const, label: `장부전체 ${totalAll}건`,                          active: 'bg-primary-50 border-primary-400 text-primary-700' },
+                { key: 'income-all'  as const, label: `수입전체 ${totalIncomeEntries}건`,                 active: 'bg-emerald-50 border-emerald-500 text-emerald-700' },
+                { key: 'expense-all' as const, label: `지출전체 ${totalLinked + totalUnlinked}건`,         active: 'bg-rose-50 border-rose-400 text-rose-700' },
+                { key: 'linked'      as const, label: `영수증 제출완료 ${totalLinked}건`,                  active: 'bg-blue-50 border-blue-400 text-blue-700' },
+                { key: 'unlinked'    as const, label: `영수증 미제출 ${totalUnlinked}건`,                  active: 'bg-amber-50 border-amber-400 text-amber-700' },
               ]).map(({ key, label, active }) => (
                 <button
                   key={key}
-                  onClick={() => setFilterReceipt(key)}
+                  onClick={() => { setFilterReceipt(key); setPage(1); }}
                   className={`text-xs px-3 py-1 rounded-full border font-medium transition-colors ${
                     filterReceipt === key ? active : 'border-gray-200 text-gray-500 hover:border-gray-400'
                   }`}
@@ -748,7 +750,7 @@ export default function LedgerPage() {
                 </button>
               ))}
             </div>
-            {unlinkedCount > 0 && (
+            {totalUnlinked > 0 && (
               <button
                 onClick={() => router.push('/receipts/upload')}
                 className="text-xs text-primary-600 hover:text-primary-800 font-medium shrink-0"
@@ -888,13 +890,14 @@ export default function LedgerPage() {
                               onOpenModal={(imageUrl) =>
                                 setReceiptImageModal({ open: true, imageUrl, receiptId: entry.receipt_id! })
                               }
+                              onHoverPreview={setHoverPreviewUrl}
                             />
                           ) : (
                             // 지출 항목만 미연동 표시 (수입은 영수증 불필요)
                             entry.expense > 0 && (
                               <span className="shrink-0 inline-flex items-center text-[10px]
                                 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200">
-                                미연동
+                                미제출
                               </span>
                             )
                           )}
@@ -923,15 +926,25 @@ export default function LedgerPage() {
                       </td>
                       <td className="px-4 py-3">
                         {entry.category && (
-                          <span
-                            className="inline-block rounded-md px-2 py-0.5 text-xs font-medium"
-                            style={{
-                              backgroundColor: (entry.category.color || '#6366f1') + '20',
-                              color: entry.category.color || '#6366f1',
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFilterCategory(prev => prev === entry.category_id ? '' : entry.category_id);
+                              setPage(1);
                             }}
+                            title={filterCategory === entry.category_id ? '필터 해제' : '이 카테고리로 필터'}
+                            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
+                              filterCategory === entry.category_id
+                                ? 'ring-2 ring-offset-1 bg-gray-200 text-gray-900'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
                           >
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: entry.category.color || '#6366f1' }}
+                            />
                             {entry.category.name}
-                          </span>
+                          </button>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">
@@ -1142,6 +1155,12 @@ export default function LedgerPage() {
         title="항목 수정"
       >
         <form onSubmit={handleEditSubmit} className="space-y-4">
+          {editEntry?.source === 'receipt' && (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+              <span className="shrink-0 mt-0.5">⚠️</span>
+              <span>영수증 연동 항목입니다. 수정 시 영수증 원본과 내용이 달라질 수 있습니다.</span>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">날짜 *</label>
             <input
@@ -1268,6 +1287,19 @@ export default function LedgerPage() {
         onCancel={() => setBulkDeleteConfirm(false)}
       />
 
+      {/* ─── 영수증 hover 미리보기 ─── */}
+      {hoverPreviewUrl && (
+        <div className="fixed top-1/2 right-4 md:right-10 -translate-y-1/2 z-50 pointer-events-none
+                        w-52 md:w-72 bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
+          <img
+            src={hoverPreviewUrl}
+            loading="lazy"
+            alt="영수증 미리보기"
+            className="w-full object-contain max-h-72 md:max-h-96"
+          />
+        </div>
+      )}
+
       {/* ─── 영수증 이미지 확대 모달 ─── */}
       <Modal
         isOpen={receiptImageModal.open}
@@ -1305,57 +1337,40 @@ export default function LedgerPage() {
   );
 }
 
+export default function LedgerPage() {
+  return (
+    <Suspense>
+      <LedgerPageInner />
+    </Suspense>
+  );
+}
+
 // ─── 영수증 미리보기 뱃지 ──────────────────────────────────────────
 function ReceiptPreviewBadge({
   receiptId,
   imageUrl,
   onOpenModal,
+  onHoverPreview,
 }: {
   receiptId: string;
   imageUrl: string | null;
   onOpenModal: (imageUrl: string) => void;
+  onHoverPreview: (url: string | null) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <div
-      className="relative inline-flex shrink-0"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+    <button
+      onMouseEnter={() => { if (imageUrl) onHoverPreview(imageUrl); }}
+      onMouseLeave={() => onHoverPreview(null)}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (imageUrl) onOpenModal(imageUrl);
+      }}
+      className="inline-flex items-center gap-0.5 text-[10px] font-medium
+        px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700
+        border border-emerald-200 hover:bg-emerald-100 transition-colors shrink-0"
     >
-      {/* 뱃지 */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (imageUrl) onOpenModal(imageUrl);
-        }}
-        className="inline-flex items-center gap-0.5 text-[10px] font-medium
-          px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700
-          border border-emerald-200 hover:bg-emerald-100 transition-colors"
-      >
-        <Paperclip className="h-2.5 w-2.5" />
-        영수증
-      </button>
-
-      {/* Hover 팝업 미리보기 */}
-      {hovered && (
-        <div
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50
-            bg-white rounded-xl shadow-2xl border border-gray-200 p-2 w-48"
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          <div className="w-full aspect-[3/4] rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
-            {imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt="영수증 미리보기" className="w-full h-full object-cover" />
-            ) : (
-              <p className="text-xs text-gray-400">이미지 없음</p>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-400 text-center mt-1">클릭하면 크게 볼 수 있습니다</p>
-        </div>
-      )}
-    </div>
+      <Paperclip className="h-2.5 w-2.5" />
+      영수증
+    </button>
   );
 }

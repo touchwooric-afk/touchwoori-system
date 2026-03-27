@@ -75,22 +75,10 @@ export interface LedgerEntryWithBalance extends LedgerEntry {
   category?: Category;
 }
 
-export interface Settlement {
-  id: string;
-  title: string;
-  start_date: string;
-  end_date: string;
-  memo: string | null;
-  audit_file_url: string | null;
-  audit_note: string | null;
-  created_by: string;
-  created_at: string;
-}
 
 export interface Receipt {
   id: string;
   department_id: string;
-  settlement_id: string | null;
   category_id: string;
   submitted_by: string;
   status: ReceiptStatus;
@@ -108,8 +96,23 @@ export interface Receipt {
   reject_reason: string | null;
   memo: string | null;
   pdf_crop: PdfCrop | null;
+  bank_name: string | null;
+  account_holder: string | null;
+  account_number: string | null;
+  has_duplicate_warning: boolean | null;
+  approved_amount: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AccountFavorite {
+  id: string;
+  user_id: string;
+  label: string;
+  bank_name: string;
+  account_holder: string;
+  account_number: string;
+  created_at: string;
 }
 
 export interface ReceiptWithUser extends Receipt {

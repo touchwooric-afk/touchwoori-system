@@ -11,7 +11,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import Pagination from '@/components/ui/Pagination';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { Receipt as ReceiptIcon, Plus, Trash2 } from 'lucide-react';
+import { Receipt as ReceiptIcon, Plus, Trash2, RotateCcw, Banknote, Image as ImageIcon } from 'lucide-react';
 import type { ReceiptWithUser } from '@/types';
 
 type FilterTab = 'all' | 'pending' | 'approved' | 'rejected';
@@ -25,6 +25,7 @@ export default function MyReceiptsPage() {
 
   const [receipts, setReceipts] = useState<ReceiptWithUser[]>([]);
   const [total, setTotal] = useState(0);
+  const [pendingTotal, setPendingTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterTab>('all');
   const [page, setPage] = useState(1);
@@ -33,6 +34,8 @@ export default function MyReceiptsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resubmittingId, setResubmittingId] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const fetchReceipts = useCallback(async () => {
     setLoading(true);
@@ -44,6 +47,7 @@ export default function MyReceiptsPage() {
       if (json.data) {
         setReceipts(json.data);
         setTotal(json.total ?? json.data.length);
+        setPendingTotal(json.pendingTotal ?? 0);
       }
     } catch {
       toast.error('영수증 목록을 불러오지 못했습니다');
@@ -94,6 +98,22 @@ export default function MyReceiptsPage() {
     }
   };
 
+  const handleResubmit = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setResubmittingId(id);
+    try {
+      const res = await fetch(`/api/receipts/${id}/resubmit`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success('재제출되었습니다. 승인을 기다려주세요');
+      fetchReceipts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '재제출에 실패했습니다');
+    } finally {
+      setResubmittingId(null);
+    }
+  };
+
   const tabs: { key: FilterTab; label: string }[] = [
     { key: 'all', label: '전체' },
     { key: 'pending', label: '대기중' },
@@ -121,6 +141,17 @@ export default function MyReceiptsPage() {
             </Button>
           </div>
         </div>
+
+        {/* 받아야 할 총액 배너 */}
+        {pendingTotal > 0 && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 mb-4">
+            <Banknote className="h-5 w-5 text-amber-500 shrink-0" />
+            <div>
+              <p className="text-xs text-amber-600 font-medium">승인 대기 중 — 받아야 할 총액</p>
+              <p className="text-lg font-bold text-amber-700">{formatCurrency(pendingTotal)}</p>
+            </div>
+          </div>
+        )}
 
         {/* Filter tabs */}
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
@@ -195,21 +226,71 @@ export default function MyReceiptsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs text-gray-500">{formatDate(receipt.date)}</span>
+                        <span className="text-xs text-gray-500">항목일 {formatDate(receipt.date)}</span>
                         <StatusBadge status={receipt.status} />
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                        <span>제출일 {formatDate(receipt.created_at)}</span>
+                        {(user?.role === 'master' || user?.role === 'accountant') && receipt.submitter?.name && (
+                          <>
+                            <span>·</span>
+                            <span className="font-medium text-gray-500">{receipt.submitter.name}</span>
+                          </>
+                        )}
                       </div>
                       <p className="text-sm font-medium text-gray-900 truncate">{receipt.description}</p>
                       {receipt.category && (
                         <span className="text-xs text-gray-500">{receipt.category.name}</span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold text-gray-900 ml-3 whitespace-nowrap">
-                      {formatCurrency(receipt.final_amount)}
-                    </p>
+                    <div className="ml-3 flex items-start gap-2">
+                      <div className="text-right whitespace-nowrap">
+                        {receipt.approved_amount != null && receipt.approved_amount !== receipt.final_amount ? (
+                          <>
+                            <p className="text-xs text-gray-400 line-through">{formatCurrency(receipt.final_amount)}</p>
+                            <p className="text-sm font-semibold text-orange-600">{formatCurrency(receipt.approved_amount)}</p>
+                          </>
+                        ) : (
+                          <p className="text-sm font-semibold text-gray-900">{formatCurrency(receipt.final_amount)}</p>
+                        )}
+                      </div>
+                      {receipt.image_url && (
+                        <button
+                          onMouseEnter={() => setPreviewUrl(receipt.image_url!)}
+                          onMouseLeave={() => setPreviewUrl(null)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewUrl(prev => prev === receipt.image_url ? null : receipt.image_url!);
+                          }}
+                          className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                            previewUrl === receipt.image_url
+                              ? 'text-primary-600 bg-primary-50'
+                              : 'text-gray-400 hover:text-primary-500 hover:bg-gray-50'
+                          }`}
+                          title="이미지 미리보기"
+                        >
+                          <ImageIcon className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {receipt.status === 'rejected' && receipt.reject_reason && (
-                    <div className="mt-2 text-xs text-danger-600 bg-danger-50 rounded-lg px-3 py-2">
-                      반려 사유: {receipt.reject_reason}
+                  {receipt.status === 'rejected' && (
+                    <div className="mt-2 space-y-1.5">
+                      {receipt.reject_reason && (
+                        <div className="text-xs text-danger-600 bg-danger-50 rounded-lg px-3 py-2">
+                          반려 사유: {receipt.reject_reason}
+                        </div>
+                      )}
+                      <button
+                        onClick={(e) => handleResubmit(receipt.id, e)}
+                        disabled={resubmittingId === receipt.id}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium
+                          text-primary-600 bg-primary-50 hover:bg-primary-100
+                          rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <RotateCcw className={`h-3 w-3 ${resubmittingId === receipt.id ? 'animate-spin' : ''}`} />
+                        {resubmittingId === receipt.id ? '재제출 중...' : '재제출'}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -220,6 +301,19 @@ export default function MyReceiptsPage() {
 
         <Pagination totalItems={total} pageSize={PAGE_SIZE} currentPage={page} onPageChange={setPage} />
       </div>
+
+      {/* 이미지 미리보기 팝업 */}
+      {previewUrl && (
+        <div className="fixed top-1/2 right-4 md:right-10 -translate-y-1/2 z-50 pointer-events-none
+                        w-52 md:w-72 bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
+          <img
+            src={previewUrl}
+            loading="lazy"
+            alt="영수증 미리보기"
+            className="w-full object-contain max-h-72 md:max-h-96"
+          />
+        </div>
+      )}
 
       <ConfirmDialog
         isOpen={deleteConfirm}
