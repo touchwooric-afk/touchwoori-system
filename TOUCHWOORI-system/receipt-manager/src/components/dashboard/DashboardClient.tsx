@@ -168,7 +168,12 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
     return { ...m, balance: running };
   });
 
-  if (!hasMonthly && !hasPie) return null;
+  if (!hasMonthly && !hasPie) return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+      <p className="text-sm font-medium text-gray-500">아직 장부 데이터가 없습니다</p>
+      <p className="text-xs text-gray-400 mt-1">회계 교사 선생님에게 문의하세요</p>
+    </div>
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -437,7 +442,7 @@ export default function DashboardClient() {
 
   if (!user) return null;
 
-  const showCharts = user.role !== 'sub_master' && user.role !== 'auditor';
+  const showCharts = user.role !== 'sub_master';
 
   return (
     <AppShell>

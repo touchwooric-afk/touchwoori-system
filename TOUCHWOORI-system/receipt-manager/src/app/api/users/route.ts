@@ -134,6 +134,10 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: `사용자 수정에 실패했습니다: ${error.message}` }, { status: 500 });
     }
 
+    // 승인(active) 또는 사용자 정보 수정 시 Auth 이메일 인증 처리 (미인증 계정 로그인 차단 방지)
+    const serviceClient = createServiceClient();
+    await serviceClient.auth.admin.updateUserById(id, { email_confirm: true });
+
     return NextResponse.json({ data });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
