@@ -1,4 +1,4 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 import { createServerClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
@@ -118,14 +118,15 @@ export async function POST(request: NextRequest) {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, '장부');
 
-    // 엑셀 파일을 버퍼로 변환
-    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    // 엑셀 파일을 ArrayBuffer로 변환 (Edge Runtime 호환)
+    const excelArrayBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    const excelUint8 = new Uint8Array(excelArrayBuffer);
 
     // UTF-8 BOM + 엑셀 바이너리
     const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-    const combined = new Uint8Array(bom.length + excelBuffer.length);
+    const combined = new Uint8Array(bom.length + excelUint8.length);
     combined.set(bom, 0);
-    combined.set(new Uint8Array(excelBuffer), bom.length);
+    combined.set(excelUint8, bom.length);
 
     // 파일명 생성
     const dateStr = new Date().toISOString().split('T')[0];
