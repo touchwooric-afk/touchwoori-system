@@ -451,10 +451,12 @@ export default function PendingReceiptsPage() {
               }
 
               const isDupe = (r: ReceiptWithUser) =>
-                !!(r as any).has_duplicate_warning || withinPendingDupeIds.has(r.id);
+                !!(r as any).has_duplicate_warning || withinPendingDupeIds.has(r.id) || !!(r as any).has_ledger_match;
 
               const dupeLabel = (r: ReceiptWithUser) =>
-                withinPendingDupeIds.has(r.id)
+                (r as any).has_ledger_match
+                  ? '장부에 동일 금액 항목이 이미 존재합니다'
+                  : withinPendingDupeIds.has(r.id)
                   ? '같은 금액의 영수증이 중복 제출되었습니다'
                   : '이미 승인된 내역과 중복될 수 있습니다';
 

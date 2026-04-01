@@ -88,8 +88,39 @@ export async function GET(request: NextRequest) {
       pendingTotal = (sumRows || []).reduce((s, r) => s + (r.final_amount || 0), 0);
     }
 
+    // pending 조회 시: 장부 항목 expense 금액과 대조해 중복 플래그 추가
+    let enrichedData = data || [];
+    if (status === 'pending' && enrichedData.length > 0) {
+      // 부서의 활성 장부 조회
+      const { data: ledgers } = await supabase
+        .from('ledgers')
+        .select('id')
+        .eq('department_id', profile.role === 'accountant' ? profile.department_id : (profile.department_id ?? ''))
+        .eq('is_active', true);
+
+      if (ledgers && ledgers.length > 0) {
+        const ledgerIds = ledgers.map((l: { id: string }) => l.id);
+        // 장부 항목 expense 금액 목록 (이미 영수증 연동된 항목 제외)
+        const { data: ledgerExpenses } = await supabase
+          .from('ledger_entries')
+          .select('expense, receipt_id')
+          .in('ledger_id', ledgerIds)
+          .gt('expense', 0)
+          .is('receipt_id', null);
+
+        const ledgerExpenseAmounts = new Set(
+          (ledgerExpenses || []).map((e: { expense: number }) => e.expense)
+        );
+
+        enrichedData = enrichedData.map((r: Record<string, unknown>) => ({
+          ...r,
+          has_ledger_match: ledgerExpenseAmounts.has(r.final_amount as number),
+        }));
+      }
+    }
+
     return NextResponse.json({
-      data: data || [],
+      data: enrichedData,
       total: count || 0,
       page,
       pageSize,
