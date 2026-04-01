@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 import { NextResponse } from 'next/server';
 
 // POST: OCR 처리 (플레이스홀더 - 실제 OCR은 클라이언트에서 Tesseract.js로 처리)

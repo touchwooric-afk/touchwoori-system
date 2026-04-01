@@ -1,5 +1,8 @@
 'use client';
 
+export const runtime = 'edge';
+
+
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { Clock } from 'lucide-react';

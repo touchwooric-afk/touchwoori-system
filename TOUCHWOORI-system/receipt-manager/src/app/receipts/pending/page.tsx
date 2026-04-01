@@ -1,5 +1,8 @@
 'use client';
 
+export const runtime = 'edge';
+
+
 import { useState, useEffect, useRef } from 'react';
 import { useUser } from '@/hooks/useUser';
 import { useToast } from '@/components/ui/Toast';

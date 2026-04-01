@@ -1,5 +1,8 @@
 'use client';
 
+export const runtime = 'edge';
+
+
 import { useState } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
