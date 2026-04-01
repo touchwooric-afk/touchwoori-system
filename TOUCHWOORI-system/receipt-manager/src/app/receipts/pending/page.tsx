@@ -368,12 +368,15 @@ export default function PendingReceiptsPage() {
         {!loading && receipts.length > 0 && (() => {
           // 제출자별 그룹화
           const groups: Record<string, { name: string; items: ReceiptWithUser[] }> = {};
+          const summarySubmitterOrder: string[] = [];
           for (const r of receipts) {
             const name = r.submitter?.name ?? '알 수 없음';
-            if (!groups[name]) groups[name] = { name, items: [] };
+            if (!groups[name]) { groups[name] = { name, items: [] }; summarySubmitterOrder.push(name); }
             groups[name].items.push(r);
           }
           const groupList = Object.values(groups);
+          const SUMMARY_COLORS = ['bg-blue-50 border-blue-300','bg-green-50 border-green-300','bg-purple-50 border-purple-300','bg-teal-50 border-teal-300','bg-pink-50 border-pink-300','bg-orange-50 border-orange-300'];
+          const getSummaryColor = (name: string) => SUMMARY_COLORS[summarySubmitterOrder.indexOf(name) % SUMMARY_COLORS.length];
           const grandTotal = groupList.reduce((s, g) => s + g.items.reduce((ss, r) => ss + r.final_amount, 0), 0);
 
           return (
@@ -390,7 +393,7 @@ export default function PendingReceiptsPage() {
                 {groupList.map((g) => {
                   const groupTotal = g.items.reduce((s, r) => s + r.final_amount, 0);
                   return (
-                    <div key={g.name} className="px-5 py-3">
+                    <div key={g.name} className={`px-5 py-3 border-l-4 ${getSummaryColor(g.name)}`}>
                       {/* 제출자 요약 행 */}
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-sm font-semibold text-orange-800">

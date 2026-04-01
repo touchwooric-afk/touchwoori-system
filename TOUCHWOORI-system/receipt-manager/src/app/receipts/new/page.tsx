@@ -13,7 +13,7 @@ import Button from '@/components/ui/Button';
 import DatePicker from '@/components/ui/DatePicker';
 import CurrencyInput from '@/components/ui/CurrencyInput';
 import { today } from '@/lib/format';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, AlertTriangle } from 'lucide-react';
 import type { Category } from '@/types';
 
 export default function NewReceiptPage() {
@@ -35,6 +35,7 @@ export default function NewReceiptPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [duplicateConfirm, setDuplicateConfirm] = useState<{ existing: { description: string; date: string; final_amount: number; status: string } } | null>(null);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -79,7 +80,7 @@ export default function NewReceiptPage() {
     setImagePreview(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, skipDupeCheck = false) => {
     e.preventDefault();
     if (!user) return;
 
@@ -123,9 +124,20 @@ export default function NewReceiptPage() {
           vendor: form.vendor || null,
           memo: form.memo || null,
           image_url: imageUrl,
+          skip_duplicate_check: skipDupeCheck,
+          has_duplicate_warning: skipDupeCheck,
         }),
       });
 
+      if (createRes.status === 409) {
+        const json = await createRes.json();
+        if (json.can_override) {
+          setDuplicateConfirm({ existing: json.existing });
+          setSubmitting(false);
+          return;
+        }
+        throw new Error(json.error || '중복 영수증입니다');
+      }
       if (!createRes.ok) {
         const json = await createRes.json();
         throw new Error(json.error || '등록에 실패했습니다');
@@ -158,6 +170,49 @@ export default function NewReceiptPage() {
 
   return (
     <AppShell>
+      {duplicateConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-amber-100 p-2 shrink-0">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">중복 영수증 확인</h3>
+                <p className="text-sm text-gray-500 mt-1">동일한 금액의 영수증이 이미 존재합니다.</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">항목명</span>
+                <span className="font-medium text-gray-900 truncate max-w-[180px]">{duplicateConfirm.existing.description}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">날짜</span>
+                <span className="font-medium text-gray-900">{duplicateConfirm.existing.date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">금액</span>
+                <span className="font-medium text-gray-900">{duplicateConfirm.existing.final_amount.toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">상태</span>
+                <span className="font-medium text-gray-900">
+                  {duplicateConfirm.existing.status === 'pending' ? '승인 대기' : duplicateConfirm.existing.status === 'approved' ? '승인됨' : duplicateConfirm.existing.status}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-amber-600 font-medium">⚠️ 그래도 제출 시 회계 담당자에게 중복 경고로 표시됩니다.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setDuplicateConfirm(null)}>취소</Button>
+              <Button variant="danger" onClick={async () => {
+                setDuplicateConfirm(null);
+                await handleSubmit(new Event('submit') as unknown as React.FormEvent, true);
+              }}>그래도 제출</Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-lg mx-auto">
         <h1 className="text-xl font-bold text-gray-900 mb-6">영수증 직접 등록</h1>
 

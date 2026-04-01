@@ -701,6 +701,7 @@ export default function ReceiptUploadPage() {
                       onRefreshCandidates={(desc, amount) => {
                         const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
                         if (ledgerIdToUse) fetchCandidates(row.localId, ledgerIdToUse, desc, amount, row.date);
+                        checkSimilarReceipt(row.localId, amount);
                       }}
                       onPreview={() => setPreviewModal({ open: true, url: row.previewUrl, name: row.file.name })}
                       onRemove={() => removeRow(row.localId)}
