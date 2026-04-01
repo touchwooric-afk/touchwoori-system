@@ -774,7 +774,7 @@ export default function ReceiptUploadPage() {
               : <p className="text-xs text-gray-400">중복 제출이 필요하다면 회계 담당자에게 문의하세요</p>
             }
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDuplicateQueue(null)}>취소</Button>
+              <Button variant="secondary" onClick={() => setDuplicateQueue(null)}>취소</Button>
               {duplicateQueue?.can_override && (
                 <Button
                   variant="danger"
