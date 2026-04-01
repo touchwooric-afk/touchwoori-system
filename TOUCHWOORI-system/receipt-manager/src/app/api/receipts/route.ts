@@ -103,10 +103,9 @@ export async function GET(request: NextRequest) {
         // 장부 항목 expense 금액 목록 (이미 영수증 연동된 항목 제외)
         const { data: ledgerExpenses } = await supabase
           .from('ledger_entries')
-          .select('expense, receipt_id')
+          .select('expense')
           .in('ledger_id', ledgerIds)
-          .gt('expense', 0)
-          .is('receipt_id', null);
+          .gt('expense', 0);
 
         const ledgerExpenseAmounts = new Set(
           (ledgerExpenses || []).map((e: { expense: number }) => e.expense)
