@@ -157,7 +157,7 @@ export async function POST(
             ledger_id: mainLedger.id,
             receipt_id: receiptId,
             category_id: entryOverrides?.category_id ?? receipt.category_id,
-            date: entryOverrides?.date ?? receipt.date,
+            date: entryOverrides?.date ?? now.split('T')[0],
             description: entryOverrides?.description ?? receipt.description,
             income: entryOverrides?.income !== undefined ? entryOverrides.income : (isIncome ? effectiveAmount : 0),
             expense: entryOverrides?.expense !== undefined ? entryOverrides.expense : (isIncome ? 0 : effectiveAmount),
