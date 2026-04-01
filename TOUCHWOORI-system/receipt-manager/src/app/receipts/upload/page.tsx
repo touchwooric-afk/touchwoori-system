@@ -98,6 +98,7 @@ export default function ReceiptUploadPage() {
   const [duplicateQueue, setDuplicateQueue] = useState<{
     row: ReceiptRow;
     existing: { id: string; description: string; date: string; final_amount: number; status: string };
+    can_override?: boolean;
   } | null>(null);
 
   const isEditor = user?.role === 'accountant' || user?.role === 'master';
@@ -307,7 +308,7 @@ export default function ReceiptUploadPage() {
   }, [bankInfo]);
 
   // ── 저장 (단건) ────────────────────────────────────────────────
-  const saveRow = useCallback(async (row: ReceiptRow): Promise<boolean> => {
+  const saveRow = useCallback(async (row: ReceiptRow, forceSubmit = false): Promise<boolean> => {
     const amount = parseAmountInput(row.amount);
     if (!row.date || !amount || !row.categoryId || !row.description.trim()) {
       toast.error(`날짜, 금액, 카테고리, 항목명을 모두 입력해주세요 (${row.file.name})`);
@@ -355,17 +356,17 @@ export default function ReceiptUploadPage() {
           memo: row.memo || null,
           image_url: imageUrl,
           skip_auto_ledger: row.matchMode === 'link',
-          skip_duplicate_check: row.matchMode === 'link',
+          skip_duplicate_check: row.matchMode === 'link' || forceSubmit,
           bank_name: bankInfo.bank_name || null,
           account_holder: bankInfo.account_holder || null,
           account_number: bankInfo.account_number || null,
-          has_duplicate_warning: !!row.similarWarning,
+          has_duplicate_warning: !!row.similarWarning || forceSubmit,
         }),
       });
       const receiptJson = await receiptRes.json();
       if (receiptRes.status === 409 && receiptJson.code === 'DUPLICATE') {
         updateRow(row.localId, { saveStatus: 'idle' });
-        setDuplicateQueue({ row, existing: receiptJson.existing });
+        setDuplicateQueue({ row, existing: receiptJson.existing, can_override: receiptJson.can_override });
         return false;
       }
       if (!receiptRes.ok) throw new Error(receiptJson.error);
@@ -743,8 +744,8 @@ export default function ReceiptUploadPage() {
                 <AlertCircle className="h-5 w-5 text-rose-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">이미 제출된 영수증</h3>
-                <p className="text-sm text-gray-500 mt-1">동일한 날짜와 금액의 영수증이 이미 존재합니다</p>
+                <h3 className="font-semibold text-gray-900">중복 영수증 확인</h3>
+                <p className="text-sm text-gray-500 mt-1">동일한 금액의 영수증이 이미 존재합니다. 중복 제출일 수 있습니다.</p>
               </div>
             </div>
             <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
@@ -768,9 +769,22 @@ export default function ReceiptUploadPage() {
                 }</span>
               </div>
             </div>
-            <p className="text-xs text-gray-400">중복 제출이 필요하다면 회계 담당자에게 문의하세요</p>
-            <div className="flex justify-end">
-              <Button onClick={() => setDuplicateQueue(null)}>확인</Button>
+            {duplicateQueue?.can_override
+              ? <p className="text-xs text-amber-600 font-medium">⚠️ 중복 제출 시 회계 담당자에게 중복 경고로 표시됩니다.</p>
+              : <p className="text-xs text-gray-400">중복 제출이 필요하다면 회계 담당자에게 문의하세요</p>
+            }
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setDuplicateQueue(null)}>취소</Button>
+              {duplicateQueue?.can_override && (
+                <Button
+                  variant="danger"
+                  onClick={async () => {
+                    const q = duplicateQueue;
+                    setDuplicateQueue(null);
+                    await saveRow(q.row, true);
+                  }}
+                >그래도 제출</Button>
+              )}
             </div>
           </div>
         </div>

@@ -171,14 +171,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 중복 영수증 검사 (같은 부서 + 날짜 + 금액이 이미 존재하면 차단)
-    // 기존 장부 항목에 연결하는 경우에는 스킵 (이미 존재하는 항목에 영수증을 붙이는 것이므로)
+    // 중복 영수증 검사 (같은 제출자 + 금액이 이미 존재하면 경고, 날짜 무관)
+    // 기존 장부 항목에 연결하는 경우에는 스킵
     if (!skip_duplicate_check) {
       const { data: duplicate } = await supabase
         .from('receipts')
         .select('id, description, date, final_amount, status, submitted_by')
         .eq('department_id', profile.department_id)
-        .eq('date', date)
+        .eq('submitted_by', authUser.id)
         .eq('final_amount', final_amount)
         .neq('status', 'rejected')
         .limit(1)
@@ -186,8 +186,9 @@ export async function POST(request: NextRequest) {
 
       if (duplicate) {
         return NextResponse.json({
-          error: '동일한 날짜와 금액의 영수증이 이미 존재합니다',
+          error: '동일한 금액의 영수증이 이미 존재합니다. 중복 제출일 수 있습니다.',
           code: 'DUPLICATE',
+          can_override: true,
           existing: {
             id: duplicate.id,
             description: duplicate.description,
