@@ -437,11 +437,11 @@ export default function PendingReceiptsPage() {
         ) : (
           <>
             {(() => {
-              // 같은 제출자 + 같은 금액이 pending 목록 내에 2건 이상이면 중복 경고
+              // 같은 금액이 pending 목록 내에 2건 이상이면 중복 경고 (제출자 무관)
               const seen = new Map<string, string>();
               const withinPendingDupeIds = new Set<string>();
               for (const r of receipts) {
-                const key = `${r.submitted_by}:${r.final_amount}`;
+                const key = `${r.final_amount}`;
                 if (seen.has(key)) {
                   withinPendingDupeIds.add(r.id);
                   withinPendingDupeIds.add(seen.get(key)!);
@@ -483,7 +483,7 @@ export default function PendingReceiptsPage() {
               {receipts.map(receipt => (
                 <div
                   key={receipt.id}
-                  className={`rounded-xl shadow-sm p-4 ${isDupe(receipt) ? 'bg-amber-50 border-l-4 border-amber-400' : `${getColor(receipt).bg} ${getColor(receipt).border}`}`}
+                  className={`rounded-xl shadow-sm p-4 ${isDupe(receipt) ? `${getColor(receipt).bg} border-l-4 border-red-400` : `${getColor(receipt).bg} ${getColor(receipt).border}`}`}
                 >
                   <div className="flex items-start gap-3">
                     <input
@@ -584,8 +584,8 @@ export default function PendingReceiptsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {receipts.map(receipt => (
-                      <tr key={receipt.id} className={`${isDupe(receipt) ? 'bg-amber-50 hover:bg-amber-100' : `${getColor(receipt).bg} ${getColor(receipt).hover}`}`}>
-                        <td className={`px-4 py-3 ${isDupe(receipt) ? 'border-l-4 border-amber-400' : ''}`}>
+                      <tr key={receipt.id} className={`${getColor(receipt).bg} ${getColor(receipt).hover}`}>
+                        <td className="px-4 py-3">
                           <input
                             type="checkbox"
                             checked={selectedIds.has(receipt.id)}
@@ -595,8 +595,10 @@ export default function PendingReceiptsPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-900">
                           <div className="flex items-center gap-1.5">
-                            {isDupe(receipt) && <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
                             {receipt.submitter?.name ?? '알 수 없음'}
+                            {isDupe(receipt) && (
+                              <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold w-4 h-4 shrink-0" title={dupeLabel(receipt)}>!</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
@@ -605,7 +607,7 @@ export default function PendingReceiptsPage() {
                         <td className="px-4 py-3 text-gray-900 max-w-[200px]">
                           <p className="truncate">{receipt.description}</p>
                           {isDupe(receipt) && (
-                            <p className="text-xs text-amber-700 font-medium mt-0.5">{dupeLabel(receipt)}</p>
+                            <p className="text-xs text-red-600 font-medium mt-0.5">{dupeLabel(receipt)}</p>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 whitespace-nowrap">
