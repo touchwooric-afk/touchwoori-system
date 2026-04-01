@@ -455,6 +455,24 @@ export default function PendingReceiptsPage() {
                   ? '같은 금액의 영수증이 중복 제출되었습니다'
                   : '이미 승인된 내역과 중복될 수 있습니다';
 
+              const SUBMITTER_COLORS = [
+                { bg: 'bg-blue-50', hover: 'hover:bg-blue-100', border: 'border-l-4 border-blue-300' },
+                { bg: 'bg-green-50', hover: 'hover:bg-green-100', border: 'border-l-4 border-green-300' },
+                { bg: 'bg-purple-50', hover: 'hover:bg-purple-100', border: 'border-l-4 border-purple-300' },
+                { bg: 'bg-teal-50', hover: 'hover:bg-teal-100', border: 'border-l-4 border-teal-300' },
+                { bg: 'bg-pink-50', hover: 'hover:bg-pink-100', border: 'border-l-4 border-pink-300' },
+                { bg: 'bg-orange-50', hover: 'hover:bg-orange-100', border: 'border-l-4 border-orange-300' },
+              ];
+              const submitterColorMap = new Map<string, number>();
+              let colorIdx = 0;
+              for (const r of receipts) {
+                if (!submitterColorMap.has(r.submitted_by)) {
+                  submitterColorMap.set(r.submitted_by, colorIdx % SUBMITTER_COLORS.length);
+                  colorIdx++;
+                }
+              }
+              const getColor = (r: ReceiptWithUser) => SUBMITTER_COLORS[submitterColorMap.get(r.submitted_by) ?? 0];
+
               return (
                 <>
             {/* Mobile card view */}
@@ -462,7 +480,7 @@ export default function PendingReceiptsPage() {
               {receipts.map(receipt => (
                 <div
                   key={receipt.id}
-                  className={`bg-white rounded-xl shadow-sm p-4 ${isDupe(receipt) ? 'border-l-4 border-amber-400' : ''}`}
+                  className={`rounded-xl shadow-sm p-4 ${isDupe(receipt) ? 'bg-amber-50 border-l-4 border-amber-400' : `${getColor(receipt).bg} ${getColor(receipt).border}`}`}
                 >
                   <div className="flex items-start gap-3">
                     <input
@@ -563,7 +581,7 @@ export default function PendingReceiptsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {receipts.map(receipt => (
-                      <tr key={receipt.id} className={isDupe(receipt) ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}>
+                      <tr key={receipt.id} className={`${isDupe(receipt) ? 'bg-amber-50 hover:bg-amber-100' : `${getColor(receipt).bg} ${getColor(receipt).hover}`}`}>
                         <td className={`px-4 py-3 ${isDupe(receipt) ? 'border-l-4 border-amber-400' : ''}`}>
                           <input
                             type="checkbox"
