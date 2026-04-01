@@ -2,3 +2,7 @@ name = "touchwoori-system"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
+
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://qzydndajoescyfthzoup.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6eWRuZGFqb2VzY3lmdGh6b3VwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MDgzOTMsImV4cCI6MjA4OTQ4NDM5M30.hRymVoQcJyeqDIVt11W9IsLRG69PrRo98mQ1sE1NeaM"
