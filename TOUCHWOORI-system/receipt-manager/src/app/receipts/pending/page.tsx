@@ -365,6 +365,13 @@ export default function PendingReceiptsPage() {
           )}
         </div>
 
+        {!loading && receipts.some((r: any) => r.has_ledger_match) && (
+          <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-xl px-5 py-3 mb-3">
+            <span className="inline-flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold w-5 h-5 shrink-0 mt-0.5">!</span>
+            <p className="text-sm text-red-700 font-semibold">장부에 동일 금액 항목이 이미 존재합니다. 확인부탁드립니다.</p>
+          </div>
+        )}
+
         {!loading && receipts.length > 0 && (() => {
           // 제출자별 그룹화
           const groups: Record<string, { name: string; items: ReceiptWithUser[] }> = {};
@@ -455,7 +462,7 @@ export default function PendingReceiptsPage() {
 
               const dupeLabel = (r: ReceiptWithUser) =>
                 (r as any).has_ledger_match
-                  ? '장부에 동일 금액 항목이 이미 존재합니다'
+                  ? '장부에 동일 금액 항목이 이미 존재합니다. 확인부탁드립니다.'
                   : withinPendingDupeIds.has(r.id)
                   ? '같은 금액의 영수증이 중복 제출되었습니다'
                   : '이미 승인된 내역과 중복될 수 있습니다';
@@ -609,7 +616,7 @@ export default function PendingReceiptsPage() {
                         <td className="px-4 py-3 text-gray-900 max-w-[200px]">
                           <p className="truncate">{receipt.description}</p>
                           {isDupe(receipt) && (
-                            <p className="text-xs text-red-600 font-medium mt-0.5">{dupeLabel(receipt)}</p>
+                            <p className="text-xs text-red-700 font-semibold mt-0.5">{dupeLabel(receipt)}</p>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 whitespace-nowrap">
