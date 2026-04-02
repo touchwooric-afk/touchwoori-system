@@ -92,10 +92,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="w-64 h-full bg-white pt-16 animate-slide-in-right"
+            className="w-64 h-full bg-white pt-16 animate-slide-in-right overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <Sidebar role={user.role} />
+            <Sidebar role={user.role} mobile />
           </div>
         </div>
       )}

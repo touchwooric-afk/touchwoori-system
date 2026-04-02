@@ -10,6 +10,7 @@ import {
   BookOpen,
   FileText,
   Users,
+  FileCheck,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useUser } from '@/hooks/useUser';
@@ -31,6 +32,7 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
     case 'master':
       return [
         { label: '홈', href: '/', icon: LayoutDashboard },
+        { label: '영수증', href: '/receipts/pending', icon: FileCheck },
         { label: '관리', href: '/master/users', icon: Users, badge: pendingUserCount },
         { label: '장부', href: '/ledger', icon: BookOpen },
         { label: '결산', href: '/settlements', icon: FileText },
@@ -39,6 +41,7 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
       return [
         { label: '홈', href: '/', icon: LayoutDashboard },
         { label: '미승인', href: '/receipts/pending', icon: ClipboardList },
+        { label: '제출', href: '/receipts/upload', icon: Receipt },
         { label: '장부', href: '/ledger', icon: BookOpen },
         { label: '결산', href: '/settlements', icon: FileText },
       ];

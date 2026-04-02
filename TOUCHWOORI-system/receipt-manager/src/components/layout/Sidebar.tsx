@@ -22,6 +22,7 @@ import type { Role } from '@/types';
 
 interface SidebarProps {
   role: Role;
+  mobile?: boolean;
 }
 
 interface NavItem {
@@ -116,7 +117,7 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   return groups;
 }
 
-export default function Sidebar({ role }: SidebarProps) {
+export default function Sidebar({ role, mobile = false }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useUser();
   const [pendingCount, setPendingCount] = useState(0);
@@ -175,7 +176,11 @@ export default function Sidebar({ role }: SidebarProps) {
   const navGroups = getNavGroups(role, pendingCount, pendingUserCount, rejectedCount);
 
   return (
-    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 bg-white border-r border-gray-200">
+    <aside className={
+      mobile
+        ? 'flex flex-col w-full h-full bg-white'
+        : 'hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 bg-white border-r border-gray-200'
+    }>
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => (
           <div key={group.title}>
