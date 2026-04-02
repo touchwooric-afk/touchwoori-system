@@ -53,7 +53,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: `장부 목록 조회에 실패했습니다: ${error.message}` }, { status: 500 });
     }
 
-    return NextResponse.json({ data: data || [] });
+    let ledgers = data || [];
+
+    // 특정 부서를 조회했는데 본 장부(main)가 없으면 자동 생성
+    // — 부서가 새로 추가될 때마다 수동으로 장부를 만들지 않아도 됨
+    if (targetDept && !ledgers.some((l: { type: string }) => l.type === 'main')) {
+      const serviceClient = createServiceClient();
+      const { data: newLedger } = await serviceClient
+        .from('ledgers')
+        .insert({
+          department_id: targetDept,
+          name: '전체 회기',
+          type: 'main',
+          is_active: true,
+          created_by: authUser.id,
+        })
+        .select()
+        .single();
+      if (newLedger) ledgers = [newLedger, ...ledgers];
+    }
+
+    return NextResponse.json({ data: ledgers });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });
