@@ -232,11 +232,13 @@ export default function ReceiptUploadPage() {
   }, []);
 
   // ── 유사 영수증 중복 체크 ──────────────────────────────────────
-  const checkSimilarReceipt = useCallback(async (localId: string, amount: string) => {
+  const checkSimilarReceipt = useCallback(async (localId: string, amount: string, ledgerId?: string) => {
     const num = parseAmountInput(amount);
     if (!num) return;
     try {
-      const res = await fetch(`/api/receipts/check-similar?amount=${num}`);
+      const params = new URLSearchParams({ amount: String(num) });
+      if (ledgerId) params.set('ledgerId', ledgerId);
+      const res = await fetch(`/api/receipts/check-similar?${params}`);
       const json = await res.json();
       if (json.hasSimilar && json.similar) {
         const sim = json.similar;
@@ -285,10 +287,10 @@ export default function ReceiptUploadPage() {
       }
     }
 
-    // 유사 영수증 중복 체크 (같은 금액으로 이미 승인된 영수증 존재 여부)
+    // 유사 영수증 중복 체크 (선택한 장부 내에서만)
     for (const row of newRows) {
       if (parseAmountInput(row.amount) > 0) {
-        checkSimilarReceipt(row.localId, row.amount);
+        checkSimilarReceipt(row.localId, row.amount, ledgerIdToUse);
       }
     }
   }, [isTeacher, teacherLedgerId, selectedLedgerId, suggestCategoryId, fetchCandidates, checkSimilarReceipt, toast]);
@@ -357,6 +359,7 @@ export default function ReceiptUploadPage() {
           image_url: imageUrl,
           skip_auto_ledger: row.matchMode === 'link',
           skip_duplicate_check: row.matchMode === 'link' || forceSubmit,
+          ledger_id: (isTeacher ? teacherLedgerId : selectedLedgerId) || null,
           bank_name: bankInfo.bank_name || null,
           account_holder: bankInfo.account_holder || null,
           account_number: bankInfo.account_number || null,
@@ -701,7 +704,7 @@ export default function ReceiptUploadPage() {
                       onRefreshCandidates={(desc, amount) => {
                         const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
                         if (ledgerIdToUse) fetchCandidates(row.localId, ledgerIdToUse, desc, amount, row.date);
-                        checkSimilarReceipt(row.localId, amount);
+                        checkSimilarReceipt(row.localId, amount, ledgerIdToUse || undefined);
                       }}
                       onPreview={() => setPreviewModal({ open: true, url: row.previewUrl, name: row.file.name })}
                       onRemove={() => removeRow(row.localId)}

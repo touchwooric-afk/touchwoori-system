@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
       ocr_raw,
       skip_auto_ledger, // 기존 장부 항목에 연결할 때 중복 생성 방지
       skip_duplicate_check, // 기존 항목 연결 시 중복 검사 스킵
+      ledger_id, // 선택한 장부 ID (중복 체크 범위 한정용)
       bank_name,
       account_holder,
       account_number,
@@ -201,17 +202,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 중복 영수증 검사 (같은 부서 + 금액이 이미 존재하면 경고, 제출자/날짜 무관)
-    // 기존 장부 항목에 연결하는 경우에는 스킵
+    // 중복 영수증 검사 — 선택한 장부 내에서만, 없으면 부서 전체에서
     if (!skip_duplicate_check) {
-      const { data: duplicate } = await supabase
-        .from('receipts')
-        .select('id, description, date, final_amount, status, submitted_by')
-        .eq('department_id', profile.department_id)
-        .eq('final_amount', final_amount)
-        .neq('status', 'rejected')
-        .limit(1)
-        .maybeSingle();
+      let duplicate = null;
+
+      if (ledger_id) {
+        // 선택한 장부에 연동된 영수증 중에서만 중복 체크
+        const { data: entries } = await supabase
+          .from('ledger_entries')
+          .select('receipt_id')
+          .eq('ledger_id', ledger_id)
+          .not('receipt_id', 'is', null);
+
+        const receiptIds = (entries || []).map((e: { receipt_id: string }) => e.receipt_id);
+        if (receiptIds.length > 0) {
+          const { data } = await supabase
+            .from('receipts')
+            .select('id, description, date, final_amount, status')
+            .in('id', receiptIds)
+            .eq('final_amount', final_amount)
+            .neq('status', 'rejected')
+            .limit(1)
+            .maybeSingle();
+          duplicate = data;
+        }
+      } else {
+        // 장부 미선택 시 부서 전체에서 체크 (기존 동작)
+        const { data } = await supabase
+          .from('receipts')
+          .select('id, description, date, final_amount, status, submitted_by')
+          .eq('department_id', profile.department_id)
+          .eq('final_amount', final_amount)
+          .neq('status', 'rejected')
+          .limit(1)
+          .maybeSingle();
+        duplicate = data;
+      }
 
       if (duplicate) {
         return NextResponse.json({
