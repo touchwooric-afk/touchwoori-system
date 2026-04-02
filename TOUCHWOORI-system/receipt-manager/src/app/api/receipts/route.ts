@@ -328,13 +328,26 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 대상 영수증 조회
-    const { data: receipts } = await supabase
+    const { data: receipts, error: selectError } = await supabase
       .from('receipts')
       .select('id, image_url, submitted_by, status, department_id')
       .in('id', ids);
 
+    if (selectError) {
+      return NextResponse.json({
+        error: `영수증 조회 실패: ${selectError.message}`,
+        detail: `IDs: ${ids.join(', ')}`
+      }, { status: 500 });
+    }
+
     if (!receipts || receipts.length !== ids.length) {
-      return NextResponse.json({ error: '일부 영수증을 찾을 수 없습니다' }, { status: 404 });
+      const foundIds = receipts?.map((r: any) => r.id) || [];
+      const missingIds = ids.filter((id: string) => !foundIds.includes(id));
+      return NextResponse.json({
+        error: '일부 영수증을 찾을 수 없습니다',
+        detail: `요청: ${ids.length}건, 조회됨: ${receipts?.length || 0}건`,
+        missingIds,
+      }, { status: 404 });
     }
 
     // 역할별 권한 검증

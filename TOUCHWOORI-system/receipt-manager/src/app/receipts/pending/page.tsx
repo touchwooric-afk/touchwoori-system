@@ -299,7 +299,9 @@ export default function PendingReceiptsPage() {
     setBatchDeleteLoading(true);
     try {
       const ids = Array.from(selectedIds).join(',');
-      const res = await fetch(`/api/receipts?ids=${ids}`, { method: 'DELETE' });
+      const url = new URL(`${window.location.origin}/api/receipts`);
+      url.searchParams.set('ids', ids);
+      const res = await fetch(url, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       toast.success(json.data.message);
