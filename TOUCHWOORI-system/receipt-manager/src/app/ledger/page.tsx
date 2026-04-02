@@ -73,7 +73,7 @@ function LedgerPageInner() {
   const [totalIncomeEntries, setTotalIncomeEntries] = useState(0);
   const [totalLinked, setTotalLinked]           = useState(0);
   const [totalUnlinked, setTotalUnlinked] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
 
   // Filters
@@ -776,6 +776,14 @@ function LedgerPageInner() {
         {/* Table */}
         {loading ? (
           <TableSkeleton rows={8} cols={7} />
+        ) : ledgers.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title="장부가 없습니다"
+            description={isEditor ? '장부 관리에서 장부를 먼저 생성해주세요' : '이 부서에 아직 생성된 장부가 없습니다'}
+            actionLabel={isEditor ? '장부 관리' : undefined}
+            onAction={isEditor ? () => router.push('/ledger/manage') : undefined}
+          />
         ) : entries.length === 0 ? (
           <EmptyState
             icon={BookOpen}

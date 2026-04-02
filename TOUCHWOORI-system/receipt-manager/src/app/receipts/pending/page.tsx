@@ -36,7 +36,7 @@ export default function PendingReceiptsPage() {
   const [receipts, setReceipts] = useState<ReceiptWithUser[]>([]);
   const [total, setTotal] = useState(0);
   const [pendingTotal, setPendingTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
 
   // Selection
@@ -82,6 +82,7 @@ export default function PendingReceiptsPage() {
   const fetchReceipts = async () => {
     if (!activeDept) return;
     setLoading(true);
+    setReceipts([]);
     try {
       const params = new URLSearchParams({
         status: 'pending',
