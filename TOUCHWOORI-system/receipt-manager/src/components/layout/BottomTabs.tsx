@@ -45,6 +45,21 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
         { label: '장부', href: '/ledger', icon: BookOpen },
         { label: '결산', href: '/settlements', icon: FileText },
       ];
+    case 'sub_master':
+      return [
+        { label: '홈', href: '/', icon: LayoutDashboard },
+        { label: '관리', href: '/master/users', icon: Users, badge: pendingUserCount },
+        { label: '장부', href: '/ledger', icon: BookOpen },
+        { label: '결산', href: '/settlements', icon: FileText },
+      ];
+    case 'auditor':
+    case 'overseer':
+    case 'admin_viewer':
+      return [
+        { label: '홈', href: '/', icon: LayoutDashboard },
+        { label: '장부', href: '/ledger', icon: BookOpen },
+        { label: '결산', href: '/settlements', icon: FileText },
+      ];
     case 'teacher':
     default:
       return [

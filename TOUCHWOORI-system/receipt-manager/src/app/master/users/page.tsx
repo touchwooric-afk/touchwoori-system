@@ -16,10 +16,11 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import Pagination from '@/components/ui/Pagination';
 import { formatRole, formatDate } from '@/lib/format';
 import { Users, UserCheck, UserX, Shield, Eye, Trash2, Settings } from 'lucide-react';
-import type { User, UserStatus, Role } from '@/types';
+import type { User, UserStatus, Role, Department } from '@/types';
+import { createClient } from '@/lib/supabase';
 
 type TabFilter = 'all' | UserStatus;
-type DeptFilter = 'all' | '고등부' | '중등부';
+type DeptFilter = 'all' | string;
 
 const TABS: { key: TabFilter; label: string }[] = [
   { key: 'all', label: '전체' },
@@ -28,11 +29,6 @@ const TABS: { key: TabFilter; label: string }[] = [
   { key: 'inactive', label: '비활성' },
 ];
 
-const DEPT_LABELS: Record<string, string> = {
-  '고등부': '터치우리 고등부',
-  '중등부': '드림우리 중등부',
-};
-
 const PAGE_SIZE = 20;
 
 export default function UsersPage() {
@@ -40,6 +36,7 @@ export default function UsersPage() {
   const { user: currentUser } = useUser();
   const isMaster = currentUser?.role === 'master';
   const [users, setUsers] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabFilter>('all');
   const [deptFilter, setDeptFilter] = useState<DeptFilter>('all');
@@ -69,6 +66,16 @@ export default function UsersPage() {
     user: User | null;
     action: 'deactivate' | 'reactivate';
   }>({ open: false, user: null, action: 'deactivate' });
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from('departments')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => { if (data) setDepartments(data); });
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -268,18 +275,28 @@ export default function UsersPage() {
         </div>
 
         {/* 부서 필터 */}
-        <div className="flex gap-2">
-          {(['all', '고등부', '중등부'] as DeptFilter[]).map((dept) => (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setDeptFilter('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all duration-200
+              ${deptFilter === 'all'
+                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+          >
+            전체 부서
+          </button>
+          {departments.map((dept) => (
             <button
-              key={dept}
-              onClick={() => setDeptFilter(dept)}
+              key={dept.id}
+              onClick={() => setDeptFilter(dept.id)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all duration-200
-                ${deptFilter === dept
+                ${deptFilter === dept.id
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
                   : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                 }`}
             >
-              {dept === 'all' ? '전체 부서' : DEPT_LABELS[dept]}
+              {dept.name}
             </button>
           ))}
         </div>
@@ -355,7 +372,7 @@ export default function UsersPage() {
                               <div className="flex items-center gap-2">
                                 <Users className="h-3.5 w-3.5 text-primary-500" />
                                 <span className="text-xs font-bold text-primary-700">
-                                  {DEPT_LABELS[u.department_id] || u.department_id}
+                                  {departments.find((d) => d.id === u.department_id)?.name || u.department_id}
                                 </span>
                                 <span className="text-xs text-primary-400">{deptCounts[u.department_id]}명</span>
                               </div>
@@ -516,8 +533,9 @@ export default function UsersPage() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
               >
-                <option value="고등부">터치우리 고등부</option>
-                <option value="중등부">드림우리 중등부</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
               </select>
             </div>
 
