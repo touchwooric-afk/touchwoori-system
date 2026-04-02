@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const department = searchParams.get('department');
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const offset = (page - 1) * pageSize;
@@ -40,8 +41,12 @@ export async function GET(request: NextRequest) {
     if (status) {
       query = query.eq('status', status);
     }
+    if (department) {
+      query = query.eq('department_id', department);
+    }
 
     query = query
+      .order('department_id', { ascending: true })
       .order('created_at', { ascending: false })
       .range(offset, offset + pageSize - 1);
 

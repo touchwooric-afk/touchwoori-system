@@ -19,6 +19,7 @@ import { Users, UserCheck, UserX, Shield, Eye, Trash2, Settings } from 'lucide-r
 import type { User, UserStatus, Role } from '@/types';
 
 type TabFilter = 'all' | UserStatus;
+type DeptFilter = 'all' | '고등부' | '중등부';
 
 const TABS: { key: TabFilter; label: string }[] = [
   { key: 'all', label: '전체' },
@@ -27,7 +28,12 @@ const TABS: { key: TabFilter; label: string }[] = [
   { key: 'inactive', label: '비활성' },
 ];
 
-const PAGE_SIZE = 10;
+const DEPT_LABELS: Record<string, string> = {
+  '고등부': '터치우리 고등부',
+  '중등부': '드림우리 중등부',
+};
+
+const PAGE_SIZE = 20;
 
 export default function UsersPage() {
   const toast = useToast();
@@ -36,6 +42,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabFilter>('all');
+  const [deptFilter, setDeptFilter] = useState<DeptFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
@@ -70,9 +77,8 @@ export default function UsersPage() {
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
       });
-      if (activeTab !== 'all') {
-        params.set('status', activeTab);
-      }
+      if (activeTab !== 'all') params.set('status', activeTab);
+      if (deptFilter !== 'all') params.set('department', deptFilter);
       const res = await fetch(`/api/users?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
@@ -83,7 +89,7 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, currentPage, toast]);
+  }, [activeTab, deptFilter, currentPage, toast]);
 
   useEffect(() => {
     fetchUsers();
@@ -91,7 +97,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab]);
+  }, [activeTab, deptFilter]);
 
   const handleApproveOpen = (user: User) => {
     setSelectedUser(user);
@@ -197,6 +203,54 @@ export default function UsersPage() {
     }
   };
 
+  const UserRow = ({ u }: { u: User }) => (
+    <tr className="hover:bg-gray-50 transition-colors">
+      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{u.name}</td>
+      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap hidden sm:table-cell">{u.email}</td>
+      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap hidden md:table-cell">{u.position || '-'}</td>
+      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatRole(u.role)}</td>
+      <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={u.status} /></td>
+      <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap hidden lg:table-cell">{formatDate(u.created_at)}</td>
+      <td className="px-4 py-3 text-right whitespace-nowrap">
+        <div className="flex items-center justify-end gap-1.5">
+          {u.status === 'pending' && (
+            <Button size="sm" onClick={() => handleApproveOpen(u)}>승인</Button>
+          )}
+          {u.status === 'active' && (
+            <>
+              <Button
+                size="sm" variant="secondary"
+                onClick={() => handleEditOpen(u)}
+                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
+              >
+                <Settings className="h-3.5 w-3.5" />변경
+              </Button>
+              <Button
+                size="sm" variant="danger"
+                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
+                onClick={() => setConfirmDialog({ open: true, user: u, action: 'deactivate' })}
+              >
+                비활성화
+              </Button>
+            </>
+          )}
+          {u.status === 'inactive' && (
+            <Button size="sm" variant="secondary"
+              onClick={() => setConfirmDialog({ open: true, user: u, action: 'reactivate' })}
+            >
+              재활성화
+            </Button>
+          )}
+          {isMaster && u.id !== currentUser?.id && (
+            <Button size="sm" variant="danger" onClick={() => setDeleteDialog({ open: true, user: u })}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -213,7 +267,24 @@ export default function UsersPage() {
           </div>
         </div>
 
-        {/* 탭 필터 */}
+        {/* 부서 필터 */}
+        <div className="flex gap-2">
+          {(['all', '고등부', '중등부'] as DeptFilter[]).map((dept) => (
+            <button
+              key={dept}
+              onClick={() => setDeptFilter(dept)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all duration-200
+                ${deptFilter === dept
+                  ? 'border-primary-500 bg-primary-50 text-primary-700'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+            >
+              {dept === 'all' ? '전체 부서' : DEPT_LABELS[dept]}
+            </button>
+          ))}
+        </div>
+
+        {/* 상태 탭 필터 */}
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
           {TABS.map((tab) => (
             <button
@@ -255,104 +326,47 @@ export default function UsersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="bg-gray-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      이름
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      이메일
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                      직분
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      권한
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      상태
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">
-                      신청일
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      액션
-                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">이름</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">이메일</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">직분</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">권한</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">상태</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">신청일</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">액션</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
-                        {u.name}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                        {u.email}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap hidden md:table-cell">
-                        {u.position || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                        {formatRole(u.role)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <StatusBadge status={u.status} />
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap hidden lg:table-cell">
-                        {formatDate(u.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {u.status === 'pending' && (
-                            <Button size="sm" onClick={() => handleApproveOpen(u)}>
-                              승인
-                            </Button>
-                          )}
-                          {u.status === 'active' && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handleEditOpen(u)}
-                                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
-                              >
-                                <Settings className="h-3.5 w-3.5" />
-                                변경
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                disabled={!isMaster && (u.role === 'master' || u.role === 'sub_master')}
-                                onClick={() =>
-                                  setConfirmDialog({ open: true, user: u, action: 'deactivate' })
-                                }
-                              >
-                                비활성화
-                              </Button>
-                            </>
-                          )}
-                          {u.status === 'inactive' && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() =>
-                                setConfirmDialog({ open: true, user: u, action: 'reactivate' })
-                              }
-                            >
-                              재활성화
-                            </Button>
-                          )}
-                          {isMaster && u.id !== currentUser?.id && (
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={() => setDeleteDialog({ open: true, user: u })}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    if (deptFilter !== 'all') {
+                      // 단일 부서 필터 시 그냥 행 나열
+                      return users.map((u) => <UserRow key={u.id} u={u} />);
+                    }
+                    // 전체 보기: 부서별 섹션 헤더 삽입
+                    const rows: React.ReactNode[] = [];
+                    let lastDept = '';
+                    const deptCounts: Record<string, number> = {};
+                    users.forEach((u) => { deptCounts[u.department_id] = (deptCounts[u.department_id] || 0) + 1; });
+                    users.forEach((u) => {
+                      if (u.department_id !== lastDept) {
+                        lastDept = u.department_id;
+                        rows.push(
+                          <tr key={`dept-${u.department_id}`} className="bg-primary-50 border-y border-primary-100">
+                            <td colSpan={7} className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <Users className="h-3.5 w-3.5 text-primary-500" />
+                                <span className="text-xs font-bold text-primary-700">
+                                  {DEPT_LABELS[u.department_id] || u.department_id}
+                                </span>
+                                <span className="text-xs text-primary-400">{deptCounts[u.department_id]}명</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      rows.push(<UserRow key={u.id} u={u} />);
+                    });
+                    return rows;
+                  })()}
                 </tbody>
               </table>
             </div>
