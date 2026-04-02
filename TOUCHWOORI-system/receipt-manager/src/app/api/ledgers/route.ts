@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { createServerClient } from '@/lib/supabase-server';
+import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
 // 전체 부서 장부 열람 가능한 역할
@@ -231,8 +231,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '종료된 장부만 삭제할 수 있습니다' }, { status: 400 });
     }
 
+    // RLS 우회: 권한 검증은 위에서 완료, service client로 삭제
     // ledger_entries는 ON DELETE CASCADE로 자동 삭제됨
-    const { error } = await supabase
+    const serviceClient = createServiceClient();
+    const { error } = await serviceClient
       .from('ledgers')
       .delete()
       .eq('id', id);
