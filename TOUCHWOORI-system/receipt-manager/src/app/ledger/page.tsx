@@ -651,11 +651,14 @@ function LedgerPageInner() {
                 focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                 outline-none transition-shadow min-w-[180px]"
             >
-              {ledgers.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} {l.type === 'main' ? '(본 장부)' : ''}
-                </option>
-              ))}
+              {(() => {
+                const multiDept = new Set(ledgers.map((l) => l.department_id)).size > 1;
+                return ledgers.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {multiDept ? `[${l.department_id}] ` : ''}{l.name}{l.type === 'main' ? ' (본 장부)' : ''}
+                  </option>
+                ));
+              })()}
             </select>
           </div>
 

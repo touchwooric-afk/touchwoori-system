@@ -3,8 +3,13 @@ export const runtime = 'nodejs';
 import { createServerClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
-// GET: 장부 목록 조회 (활성 사용자 - 부서 기준)
-export async function GET() {
+// 전체 부서 장부 열람 가능한 역할
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+
+// GET: 장부 목록 조회
+// - 일반 사용자: 본인 부서만
+// - cross-dept 역할: department_id 쿼리 파라미터로 필터링 가능, 없으면 전체
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -23,12 +28,26 @@ export async function GET() {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    const { data, error } = await supabase
+    const { searchParams } = new URL(request.url);
+    const deptParam = searchParams.get('department_id');
+
+    const isCrossDept = CROSS_DEPT_ROLES.includes(profile.role);
+    const targetDept = isCrossDept
+      ? (deptParam || null)           // cross-dept: 파라미터 있으면 해당 부서, 없으면 전체
+      : profile.department_id;        // 일반: 본인 부서 강제
+
+    let query = supabase
       .from('ledgers')
       .select('*')
-      .eq('department_id', profile.department_id)
+      .order('department_id', { ascending: true })
       .order('type', { ascending: true })
       .order('created_at', { ascending: true });
+
+    if (targetDept) {
+      query = query.eq('department_id', targetDept);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: `장부 목록 조회에 실패했습니다: ${error.message}` }, { status: 500 });
