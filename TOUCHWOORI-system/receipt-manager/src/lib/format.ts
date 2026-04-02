@@ -76,6 +76,8 @@ export function formatRole(role: string | null): string {
     case 'sub_master': return 'submaster';
     case 'accountant': return '회계 교사';
     case 'auditor':    return 'viewer';
+    case 'overseer':   return '감독';
+    case 'admin_viewer': return '행정열람';
     case 'teacher':    return '교사';
     default:           return '미지정';
   }

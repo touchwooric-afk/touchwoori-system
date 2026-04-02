@@ -50,7 +50,10 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   const isSubMaster  = role === 'sub_master';
   const isAccountant = role === 'accountant';
   const isAuditor    = role === 'auditor';
+  const isOverseer   = role === 'overseer';
+  const isAdminViewer = role === 'admin_viewer';
   const isTeacher    = role === 'teacher';
+  const isReadOnly   = isAuditor || isOverseer || isAdminViewer; // 쓰기 권한 없는 열람 역할
   const canWrite     = isMaster || isAccountant; // 재정 쓰기 권한
 
   // 시스템 관리
@@ -75,8 +78,8 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
     });
   }
 
-  // 영수증 (auditor/sub_master는 제출/승인 메뉴 없음)
-  if (!isAuditor && !isSubMaster) {
+  // 영수증 (read-only 역할 및 sub_master는 제출/승인 메뉴 없음)
+  if (!isReadOnly && !isSubMaster) {
     groups.push({
       title: '영수증',
       items: [

@@ -109,8 +109,8 @@ export async function PATCH(request: NextRequest) {
       if (targetUser && (targetUser.role === 'master' || targetUser.role === 'sub_master')) {
         return NextResponse.json({ error: '마스터 계정은 수정할 수 없습니다' }, { status: 403 });
       }
-      // sub_master가 부여 가능한 role: teacher, accountant, auditor
-      if (role !== undefined && !['teacher', 'accountant', 'auditor'].includes(role)) {
+      // sub_master가 부여 가능한 role: teacher, accountant, auditor, overseer, admin_viewer
+      if (role !== undefined && !['teacher', 'accountant', 'auditor', 'overseer', 'admin_viewer'].includes(role)) {
         return NextResponse.json({ error: '부여할 수 없는 권한입니다' }, { status: 403 });
       }
     }

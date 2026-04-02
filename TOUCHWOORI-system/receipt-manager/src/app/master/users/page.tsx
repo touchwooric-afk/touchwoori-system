@@ -413,10 +413,12 @@ export default function UsersPage() {
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { value: 'teacher',    label: '교사',      icon: UserCheck, masterOnly: false },
-                  { value: 'accountant', label: '회계 교사', icon: UserX,     masterOnly: false },
-                  { value: 'auditor',    label: 'viewer', icon: Eye,      masterOnly: false },
-                  { value: 'sub_master', label: 'submaster',  icon: Shield,   masterOnly: true  },
+                  { value: 'teacher',      label: '교사',      icon: UserCheck, masterOnly: false },
+                  { value: 'accountant',   label: '회계 교사', icon: UserX,     masterOnly: false },
+                  { value: 'auditor',      label: 'viewer',    icon: Eye,       masterOnly: false },
+                  { value: 'overseer',     label: '감독',      icon: Eye,       masterOnly: false },
+                  { value: 'admin_viewer', label: '행정열람',  icon: Eye,       masterOnly: false },
+                  { value: 'sub_master',   label: 'submaster', icon: Shield,    masterOnly: true  },
                 ].filter((opt) => !opt.masterOnly || isMaster).map((opt) => (
                   <label
                     key={opt.value}
@@ -474,10 +476,12 @@ export default function UsersPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">권한</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { value: 'teacher',    label: '교사',      icon: UserCheck, masterOnly: false },
-                  { value: 'accountant', label: '회계 교사', icon: UserX,     masterOnly: false },
-                  { value: 'auditor',    label: 'viewer', icon: Eye,      masterOnly: false },
-                  { value: 'sub_master', label: 'submaster',  icon: Shield,   masterOnly: true  },
+                  { value: 'teacher',      label: '교사',      icon: UserCheck, masterOnly: false },
+                  { value: 'accountant',   label: '회계 교사', icon: UserX,     masterOnly: false },
+                  { value: 'auditor',      label: 'viewer',    icon: Eye,       masterOnly: false },
+                  { value: 'overseer',     label: '감독',      icon: Eye,       masterOnly: false },
+                  { value: 'admin_viewer', label: '행정열람',  icon: Eye,       masterOnly: false },
+                  { value: 'sub_master',   label: 'submaster', icon: Shield,    masterOnly: true  },
                 ].filter((opt) => !opt.masterOnly || isMaster).map((opt) => (
                   <label
                     key={opt.value}

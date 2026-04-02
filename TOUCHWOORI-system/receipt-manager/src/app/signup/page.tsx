@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 import Button from '@/components/ui/Button';
-import type { Position } from '@/types';
+import type { Position, Department } from '@/types';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -18,22 +18,23 @@ export default function SignupPage() {
   const [position, setPosition] = useState('');
   const [department, setDepartment] = useState('');
   const [positions, setPositions] = useState<Position[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    const fetchPositions = async () => {
+    const fetchData = async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from('positions')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order');
-      if (data) setPositions(data);
+      const [{ data: posData }, { data: deptData }] = await Promise.all([
+        supabase.from('positions').select('*').eq('is_active', true).order('sort_order'),
+        supabase.from('departments').select('*').eq('is_active', true).order('sort_order'),
+      ]);
+      if (posData) setPositions(posData);
+      if (deptData) setDepartments(deptData);
     };
-    fetchPositions();
+    fetchData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -233,8 +234,9 @@ export default function SignupPage() {
                   outline-none transition-shadow"
               >
                 <option value="">부서를 선택하세요</option>
-                <option value="고등부">터치우리 고등부</option>
-                <option value="중등부">드림우리 중등부</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
               </select>
             </div>
 

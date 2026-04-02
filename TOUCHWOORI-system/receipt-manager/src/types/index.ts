@@ -1,7 +1,7 @@
 // ============================================
 // 역할 및 상태 타입
 // ============================================
-export type Role = 'master' | 'sub_master' | 'accountant' | 'auditor' | 'teacher';
+export type Role = 'master' | 'sub_master' | 'accountant' | 'auditor' | 'teacher' | 'overseer' | 'admin_viewer';
 export type UserStatus = 'pending' | 'active' | 'inactive';
 export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
 export type LedgerType = 'main' | 'special';
@@ -125,6 +125,22 @@ export interface PdfCrop {
   scale: number;
   offsetX: number;
   offsetY: number;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  type: 'education' | 'committee' | 'admin';
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface UserDepartment {
+  user_id: string;
+  department_id: string;
+  created_at: string;
 }
 
 export interface ExcelSync {

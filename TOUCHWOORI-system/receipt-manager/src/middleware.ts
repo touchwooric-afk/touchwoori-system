@@ -129,7 +129,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // accountant 이상 전용 경로 (sub_master/auditor 차단)
+  // accountant 이상 전용 경로 (sub_master/auditor/overseer/admin_viewer 차단)
   if (ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     if (role !== 'master' && role !== 'accountant') {
       return NextResponse.redirect(new URL('/', request.url));
