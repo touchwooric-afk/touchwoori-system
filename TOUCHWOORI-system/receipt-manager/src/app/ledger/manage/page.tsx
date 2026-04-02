@@ -15,11 +15,13 @@ import EmptyState from '@/components/ui/EmptyState';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { CardSkeleton } from '@/components/ui/Skeleton';
 import { formatDateShort } from '@/lib/format';
-import { BookOpen, Plus, Settings, Power } from 'lucide-react';
+import { BookOpen, Plus, Settings, Power, Trash2 } from 'lucide-react';
 import type { Ledger } from '@/types';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 
 export default function LedgerManagePage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const router = useRouter();
   const toast = useToast();
 
@@ -38,7 +40,15 @@ export default function LedgerManagePage() {
   }>({ open: false, ledger: null });
   const [deactivateLoading, setDeactivateLoading] = useState(false);
 
+  // Delete confirm
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    open: boolean;
+    ledger: Ledger | null;
+  }>({ open: false, ledger: null });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const isEditor = user?.role === 'accountant' || user?.role === 'master' || user?.role === 'sub_master';
+  const isMaster = user?.role === 'master';
 
   useEffect(() => {
     if (!isEditor) {
@@ -47,9 +57,11 @@ export default function LedgerManagePage() {
   }, [isEditor, router]);
 
   const fetchLedgers = useCallback(async () => {
+    if (!activeDept) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/ledgers');
+      const params = new URLSearchParams({ department_id: activeDept });
+      const res = await fetch(`/api/ledgers?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setLedgers(json.data || []);
@@ -58,7 +70,7 @@ export default function LedgerManagePage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, activeDept]);
 
   useEffect(() => {
     fetchLedgers();
@@ -113,6 +125,24 @@ export default function LedgerManagePage() {
       toast.error(err instanceof Error ? err.message : '상태 변경에 실패했습니다');
     } finally {
       setDeactivateLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const ledger = deleteConfirm.ledger;
+    if (!ledger) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/ledgers?id=${ledger.id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success(`"${ledger.name}" 장부가 삭제되었습니다`);
+      setDeleteConfirm({ open: false, ledger: null });
+      fetchLedgers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '삭제에 실패했습니다');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -215,6 +245,16 @@ export default function LedgerManagePage() {
                       종료
                     </Button>
                   )}
+                  {ledger.type === 'special' && !ledger.is_active && isMaster && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => setDeleteConfirm({ open: true, ledger })}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      삭제
+                    </Button>
+                  )}
                   {ledger.type === 'main' && (
                     <span className="text-xs text-gray-400 flex items-center ml-2">
                       본 장부는 비활성화할 수 없습니다
@@ -286,6 +326,18 @@ export default function LedgerManagePage() {
         loading={deactivateLoading}
         onConfirm={handleDeactivate}
         onCancel={() => setDeactivateConfirm({ open: false, ledger: null })}
+      />
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="장부 삭제"
+        message={`"${deleteConfirm.ledger?.name}" 장부와 모든 항목을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        confirmText="영구 삭제"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirm({ open: false, ledger: null })}
       />
     </AppShell>
   );

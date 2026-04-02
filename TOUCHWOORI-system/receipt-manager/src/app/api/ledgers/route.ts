@@ -187,3 +187,63 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });
   }
 }
+
+// DELETE: 장부 삭제 (master 전용, 종료된 특수 장부만)
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role, status')
+      .eq('id', authUser.id)
+      .single();
+
+    if (!profile || profile.status !== 'active' || profile.role !== 'master') {
+      return NextResponse.json({ error: '마스터 권한이 필요합니다' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: '장부 ID가 필요합니다' }, { status: 400 });
+    }
+
+    const { data: ledger } = await supabase
+      .from('ledgers')
+      .select('id, name, type, is_active')
+      .eq('id', id)
+      .single();
+
+    if (!ledger) {
+      return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+    }
+    if (ledger.type === 'main') {
+      return NextResponse.json({ error: '본 장부는 삭제할 수 없습니다' }, { status: 400 });
+    }
+    if (ledger.is_active) {
+      return NextResponse.json({ error: '종료된 장부만 삭제할 수 있습니다' }, { status: 400 });
+    }
+
+    // ledger_entries는 ON DELETE CASCADE로 자동 삭제됨
+    const { error } = await supabase
+      .from('ledgers')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return NextResponse.json({ error: `장부 삭제에 실패했습니다: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({ data: { message: '장부가 삭제되었습니다' } });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });
+  }
+}
