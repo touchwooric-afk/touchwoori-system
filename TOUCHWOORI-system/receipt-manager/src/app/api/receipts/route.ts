@@ -292,17 +292,35 @@ export async function POST(request: NextRequest) {
 
     // 즉시 승인된 경우 장부 항목 자동 생성 (기존 항목 연결 시엔 건너뜀)
     if (isEditor && data && !skip_auto_ledger) {
-      const { data: mainLedger } = await supabase
-        .from('ledgers')
-        .select('id')
-        .eq('department_id', profile.department_id)
-        .eq('type', 'main')
-        .eq('is_active', true)
-        .single();
+      let targetLedgerId: string | null = null;
 
-      if (mainLedger) {
+      if (ledger_id) {
+        // 선택한 장부가 있으면 해당 장부에 추가
+        const { data: selectedLedger } = await supabase
+          .from('ledgers')
+          .select('id')
+          .eq('id', ledger_id)
+          .eq('department_id', profile.department_id)
+          .eq('is_active', true)
+          .single();
+        targetLedgerId = selectedLedger?.id ?? null;
+      }
+
+      if (!targetLedgerId) {
+        // 장부 미선택 시 본 장부(main)에 추가
+        const { data: mainLedger } = await supabase
+          .from('ledgers')
+          .select('id')
+          .eq('department_id', profile.department_id)
+          .eq('type', 'main')
+          .eq('is_active', true)
+          .single();
+        targetLedgerId = mainLedger?.id ?? null;
+      }
+
+      if (targetLedgerId) {
         await supabase.from('ledger_entries').insert({
-          ledger_id: mainLedger.id,
+          ledger_id: targetLedgerId,
           receipt_id: data.id,
           category_id: data.category_id,
           date: data.date,
