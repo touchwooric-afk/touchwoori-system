@@ -35,6 +35,8 @@ export async function GET(request: NextRequest) {
       .from('receipts')
       .select('*, submitter:users!submitted_by(name), categories(name, type)', { count: 'exact' });
 
+    const deptParam = searchParams.get('department_id');
+
     // 역할별 필터링
     if (profile.role === 'teacher') {
       // Teacher: 본인 영수증만
@@ -42,8 +44,10 @@ export async function GET(request: NextRequest) {
     } else if (profile.role === 'accountant') {
       // Accountant: 같은 부서 영수증
       query = query.eq('department_id', profile.department_id);
+    } else {
+      // Master·cross-dept: 선택 부서 기준 (파라미터 없으면 전체)
+      if (deptParam) query = query.eq('department_id', deptParam);
     }
-    // Master: 모든 영수증 (필터 없음)
 
     if (status) {
       query = query.eq('status', status);

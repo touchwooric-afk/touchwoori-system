@@ -5,6 +5,7 @@ export const runtime = 'edge';
 
 import { useState, useEffect, useRef } from 'react';
 import { useUser } from '@/hooks/useUser';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
@@ -29,6 +30,7 @@ const PAGE_SIZE = 20;
 
 export default function PendingReceiptsPage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const toast = useToast();
 
   const [receipts, setReceipts] = useState<ReceiptWithUser[]>([]);
@@ -78,12 +80,14 @@ export default function PendingReceiptsPage() {
   const [approvedAmount, setApprovedAmount] = useState('');
 
   const fetchReceipts = async () => {
+    if (!activeDept) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         status: 'pending',
         page: String(page),
         pageSize: String(PAGE_SIZE),
+        department_id: activeDept,
       });
       const res = await fetch(`/api/receipts?${params}`);
       const json = await res.json();
@@ -101,7 +105,8 @@ export default function PendingReceiptsPage() {
 
   useEffect(() => {
     fetchReceipts();
-  }, [page]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, activeDept]);
 
   useEffect(() => {
     fetch('/api/categories')

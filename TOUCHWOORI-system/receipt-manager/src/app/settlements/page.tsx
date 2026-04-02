@@ -5,6 +5,7 @@ export const runtime = 'edge';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useUser } from '@/hooks/useUser';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
@@ -72,6 +73,7 @@ interface PdfData {
 
 export default function SettlementsPage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const toast = useToast();
 
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -105,9 +107,11 @@ export default function SettlementsPage() {
 
   // Fetch ledgers
   const fetchData = useCallback(async () => {
+    if (!activeDept) return;
     setLoading(true);
     try {
-      const ledgerRes = await fetch('/api/ledgers');
+      const params = new URLSearchParams({ department_id: activeDept });
+      const ledgerRes = await fetch(`/api/ledgers?${params}`);
       const ledgerJson = await ledgerRes.json();
       if (ledgerRes.ok) {
         const active = (ledgerJson.data as Ledger[]).filter((l) => l.is_active);
@@ -118,7 +122,7 @@ export default function SettlementsPage() {
     } finally {
       setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeDept]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchData();

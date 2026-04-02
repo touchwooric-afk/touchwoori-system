@@ -17,6 +17,7 @@ import Pagination from '@/components/ui/Pagination';
 import DatePicker from '@/components/ui/DatePicker';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { formatCurrency, formatDateShort, today } from '@/lib/format';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import {
   BookOpen,
   Plus,
@@ -55,6 +56,7 @@ type SortDir = 'asc' | 'desc';
 
 function LedgerPageInner() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const router = useRouter();
   const searchParams = useSearchParams();
   const ledgerIdParam = searchParams.get('ledgerId');
@@ -172,8 +174,10 @@ function LedgerPageInner() {
 
   // Fetch ledgers
   const fetchLedgers = useCallback(async () => {
+    if (!activeDept) return;
     try {
-      const res = await fetch('/api/ledgers');
+      const params = new URLSearchParams({ department_id: activeDept });
+      const res = await fetch(`/api/ledgers?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       const activeLedgers = (json.data as Ledger[]).filter((l) => l.is_active);
@@ -185,7 +189,7 @@ function LedgerPageInner() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '장부 목록을 불러올 수 없습니다');
     }
-  }, [toast, selectedLedgerId]);
+  }, [toast, selectedLedgerId, activeDept]);
 
   // Fetch categories
   const fetchCategories = useCallback(async () => {
@@ -231,6 +235,11 @@ function LedgerPageInner() {
       setLoading(false);
     }
   }, [selectedLedgerId, page, startDate, endDate, filterCategory, searchText, filterReceipt, toast]);
+
+  // 부서 변경 시 장부 선택 초기화
+  useEffect(() => {
+    setSelectedLedgerId('');
+  }, [activeDept]);
 
   useEffect(() => {
     fetchLedgers();
@@ -651,14 +660,11 @@ function LedgerPageInner() {
                 focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                 outline-none transition-shadow min-w-[180px]"
             >
-              {(() => {
-                const multiDept = new Set(ledgers.map((l) => l.department_id)).size > 1;
-                return ledgers.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {multiDept ? `[${l.department_id}] ` : ''}{l.name}{l.type === 'main' ? ' (본 장부)' : ''}
-                  </option>
-                ));
-              })()}
+              {ledgers.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}{l.type === 'main' ? ' (본 장부)' : ''}
+                </option>
+              ))}
             </select>
           </div>
 

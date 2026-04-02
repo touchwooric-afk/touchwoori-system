@@ -6,6 +6,7 @@ import { LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useUser } from '@/hooks/useUser';
 import { createClient } from '@/lib/supabase';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import Sidebar from './Sidebar';
 import BottomTabs from './BottomTabs';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -24,6 +25,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { activeDept, setActiveDept, departments, isCrossDept } = useActiveDept();
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -67,10 +69,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* 사용자 정보 */}
           <div className="flex items-center gap-3">
+            {/* 부서 선택기 — cross-dept 역할만 표시 */}
+            {isCrossDept && departments.length > 0 && (
+              <select
+                value={activeDept}
+                onChange={(e) => setActiveDept(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-semibold
+                  text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+              >
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            )}
             <div className="hidden sm:flex items-center gap-1.5">
               <span className="text-sm font-bold text-gray-800">{user.name}{getHonorific(user.position)}</span>
               <span className="text-xs text-gray-400">·</span>
-              <span className="text-xs text-gray-500">{user.department_id}</span>
+              <span className="text-xs text-gray-500">{isCrossDept ? activeDept : user.department_id}</span>
               <span className="text-xs text-gray-400">·</span>
               <span className="text-xs text-gray-500">{user.position}</span>
             </div>

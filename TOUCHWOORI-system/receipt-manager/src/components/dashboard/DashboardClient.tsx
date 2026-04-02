@@ -21,6 +21,7 @@ import {
   LabelList, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
 import { createClient } from '@/lib/supabase';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 
 interface DashboardStats {
   pendingUsers?: number;
@@ -392,20 +393,24 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
 
 export default function DashboardClient() {
   const { user } = useUser();
+  const { activeDept, isCrossDept } = useActiveDept();
   const [stats, setStats] = useState<DashboardStats>({});
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [chartLoading, setChartLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeDept) return;
 
     const fetchStats = async () => {
       const supabase = createClient();
 
       if (user.role === 'master' || user.role === 'accountant') {
+        // 부서 필터: master는 activeDept 기준, accountant는 본인 부서
+        const deptId = isCrossDept ? activeDept : user.department_id;
         const [pendingReceipts, pendingUsers] = await Promise.all([
-          supabase.from('receipts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('receipts').select('id', { count: 'exact', head: true })
+            .eq('status', 'pending').eq('department_id', deptId),
           user.role === 'master'
             ? supabase.from('users').select('id', { count: 'exact', head: true }).eq('status', 'pending')
             : Promise.resolve({ count: 0 }),
@@ -426,7 +431,9 @@ export default function DashboardClient() {
 
     const fetchCharts = async () => {
       try {
-        const res = await fetch('/api/dashboard');
+        const params = new URLSearchParams();
+        if (activeDept) params.set('department_id', activeDept);
+        const res = await fetch(`/api/dashboard?${params}`);
         const json = await res.json();
         if (json.data) setChartData(json.data);
       } catch {
@@ -438,7 +445,7 @@ export default function DashboardClient() {
 
     fetchStats();
     fetchCharts();
-  }, [user]);
+  }, [user, activeDept, isCrossDept]);
 
   if (!user) return null;
 
@@ -452,9 +459,9 @@ export default function DashboardClient() {
             <h1 className="text-2xl font-bold text-gray-900">
               안녕하세요, {user.name}님
             </h1>
-            <p className="text-sm text-gray-500 mt-1">{user.department_id} · {user.position}</p>
+            <p className="text-sm text-gray-500 mt-1">{isCrossDept ? activeDept : user.department_id} · {user.position}</p>
           </div>
-          <DepartmentLogo departmentId={user.department_id} />
+          <DepartmentLogo departmentId={isCrossDept ? activeDept : user.department_id} />
         </div>
 
         {/* 통계 카드 */}

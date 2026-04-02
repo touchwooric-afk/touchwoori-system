@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { UserProvider } from '@/hooks/useUser';
 import { ToastProvider } from '@/components/ui/Toast';
+import { DepartmentProvider } from '@/contexts/DepartmentContext';
 
 export const metadata: Metadata = {
   title: 'TOUCHWOORI - 고등부 영수증 관리',
@@ -25,9 +26,11 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <UserProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
+          <DepartmentProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </DepartmentProvider>
         </UserProvider>
       </body>
     </html>

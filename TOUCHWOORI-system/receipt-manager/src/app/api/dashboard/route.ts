@@ -1,11 +1,13 @@
 export const runtime = 'nodejs';
 
 import { createServerClient } from '@/lib/supabase-server';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
 
 // GET: 대시보드 차트용 통계 데이터
 // 반환: 최근 6개월 월별 수입/지출 + 월별 카테고리별 지출 맵
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -41,9 +43,15 @@ export async function GET() {
       .gte('date', startDate)
       .eq('ledgers.is_active', true);
 
-    if (profile.role === 'accountant' || profile.role === 'teacher') {
-      ledgerQuery = ledgerQuery.eq('ledgers.department_id', profile.department_id);
-    }
+    const { searchParams } = new URL(request.url);
+    const deptParam = searchParams.get('department_id');
+
+    // cross-dept 역할: 선택된 부서 기준, 일반 역할: 본인 부서 고정
+    const targetDept = CROSS_DEPT_ROLES.includes(profile.role)
+      ? (deptParam || profile.department_id)
+      : profile.department_id;
+
+    ledgerQuery = ledgerQuery.eq('ledgers.department_id', targetDept);
 
     const { data: entries } = await ledgerQuery;
 
