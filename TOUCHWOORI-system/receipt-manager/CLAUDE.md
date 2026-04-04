@@ -1,13 +1,13 @@
 # TOUCHWOORI 영수증 관리 시스템 — 개발 컨텍스트
 
 > 이 문서는 AI 및 신규 개발자가 프로젝트를 즉시 파악하고 작업할 수 있도록 작성된 기술 레퍼런스입니다.
-> 마지막 업데이트: 2026-03-27
+> 마지막 업데이트: 2026-04-02
 
 ---
 
 ## 프로젝트 개요
 
-교회 고등부 재정 관리 시스템. 교사들이 영수증을 제출하면 회계교사가 검토·승인하고 장부에 자동 연동. 결산 시 PDF로 지출증빙 자료를 출력한다.
+교회 다부서 재정 관리 시스템 (현재: 고등부, 중등부). 교사들이 영수증을 제출하면 회계교사가 검토·승인하고 장부에 자동 연동. 결산 시 PDF로 지출증빙 자료를 출력한다. 마스터/감독 역할은 헤더 셀렉터로 전 부서를 전환하며 열람·관리 가능.
 
 **레포지토리**: `touchwooric-afk/touchwoori-system`
 **작업 디렉토리**: `/TOUCHWOORI-system/receipt-manager`
@@ -31,13 +31,21 @@
 
 ## 역할 체계 (Role)
 
-| Role | 권한 요약 |
-|------|-----------|
-| `master` | 전체 관리 (사용자 승인, 카테고리·직분 관리, 장부, 결산) |
-| `sub_master` | 사용자 관리·역할 부여 전담. 재정 기능 없음. master 계정 수정 불가 |
-| `accountant` | 영수증 승인, 장부 편집, 결산 PDF, 카테고리 관리 |
-| `auditor` | 전체 부서 장부·영수증 열람 전용 (쓰기 불가) |
-| `teacher` | 영수증 제출, 내 제출 내역, 장부 조회 |
+| Role | UI 표시 | 권한 요약 |
+|------|---------|-----------|
+| `master` | 마스터 | 전체 관리 (사용자 승인, 카테고리·직분 관리, 장부 삭제, 결산, 전 부서 열람·편집) |
+| `sub_master` | 서브마스터 | 사용자 관리·역할 부여 전담. 재정 기능 없음. master 계정 수정 불가. 전 부서 열람 가능 |
+| `accountant` | 회계교사 | 영수증 승인, 장부 편집, 결산 PDF, 카테고리 관리 (본인 부서만) |
+| `auditor` | 뷰어 | 본인 부서 장부·영수증 열람 전용 (쓰기 불가) |
+| `overseer` | 감독 | 전 부서 장부·영수증 열람 전용 (쓰기 불가). auditor의 전부서 버전 |
+| `admin_viewer` | 행정열람 | 전 부서 장부·영수증 열람 전용 (쓰기 불가). overseer와 동일 권한 |
+| `teacher` | 교사 | 영수증 제출, 내 제출 내역, 장부 조회 (본인 부서만) |
+
+**CROSS_DEPT_ROLES** (전 부서 접근 가능 역할):
+```ts
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+```
+> ⚠️ `auditor`는 현재 CROSS_DEPT_ROLES에 포함되어 전 부서 열람 가능. 향후 본인 부서 전용으로 분리 가능.
 
 **isEditor 패턴** (장부 편집 권한 체크):
 ```ts
@@ -97,14 +105,17 @@ src/
 │   ├── useUser.ts                   # 현재 로그인 사용자 컨텍스트
 │   ├── useToast.ts
 │   └── useShortcutKey.ts
+├── contexts/
+│   └── DepartmentContext.tsx        # 전역 부서 상태 (activeDept, isCrossDept, setActiveDept)
 ├── lib/
 │   ├── supabase.ts                  # 브라우저/서버/서비스 클라이언트
 │   ├── auth.ts                      # getCurrentUser()
-│   ├── format.ts                    # formatCurrency, formatDate 등
+│   ├── format.ts                    # formatCurrency, formatDate, formatRole 등
+│   ├── departments.ts               # 부서 목록 상수 (DEPARTMENTS, DEPARTMENT_MAP)
 │   ├── ocr.ts                       # Tesseract.js 한국어 파싱
 │   ├── imagePreprocess.ts           # 이미지 압축·리사이즈
 │   └── excel.ts                     # xlsx 가져오기/내보내기
-├── types/index.ts                   # 전체 TypeScript 타입 정의
+├── types/index.ts                   # 전체 TypeScript 타입 정의 (Department, UserDepartment 포함)
 └── middleware.ts                    # 라우트 가드 (역할별 접근 제어)
 ```
 
@@ -115,11 +126,21 @@ src/
 ### 1. RLS 우회
 교사의 `ledger_entries` UPDATE/DELETE는 Supabase RLS가 차단 → API 라우트에서 권한 검증 후 `createServiceClient()`로 실행.
 영수증 삭제 시 Storage 파일 삭제도 동일하게 `createServiceClient()` 사용.
+장부 삭제(`DELETE /api/ledgers`)도 동일 패턴 — API에서 master 권한 검증 후 serviceClient 실행.
 
-### 2. 잔액 계산
+### 2. 전역 부서 전환 (DepartmentContext)
+- `CROSS_DEPT_ROLES` 소속 사용자: 헤더 `<select>` 드롭다운으로 활성 부서(activeDept) 전환 가능
+- 일반 역할: 항상 자신의 `department_id`로 고정
+- `localStorage('activeDepartment')`에 선택값 유지 (새로고침 후에도 복원)
+- 모든 페이지(장부, 영수증, 대시보드 등)가 `useActiveDept()` 훅으로 activeDept를 읽어 API 파라미터로 전달
+
+### 3. 본 장부 자동 생성
+`GET /api/ledgers?department_id=X` 호출 시 해당 부서에 `type='main'` 장부가 없으면 "전체 회기" 장부를 자동 삽입(serviceClient 사용). 새 부서 추가 시 수동으로 장부를 만들 필요 없음.
+
+### 4. 잔액 계산
 DB에 저장하지 않고, API에서 `SUM(income - expense)`를 페이지 오프셋 기준으로 누적 계산하여 반환.
 
-### 3. 영수증 승인 플로우
+### 5. 영수증 승인 플로우
 ```
 교사 업로드
   → OCR 자동 파싱 (날짜/금액/업체명)
@@ -131,15 +152,15 @@ DB에 저장하지 않고, API에서 `SUM(income - expense)`를 페이지 오프
   → 미연동 → 새 항목 추가 or 기존 항목 선택 연동
 ```
 
-### 4. 중복 영수증 차단
+### 6. 중복 영수증 차단
 같은 `department_id + date + final_amount` 조합 하드블록. 장부 연동(link) 모드는 skip.
 
-### 5. PDF 생성
+### 7. PDF 생성
 - 1페이지: 수입/지출 결산표 + 남는 공간에 영수증 자동 채움
 - 2페이지~: 영수증 2×2 그리드
 - 이미지: canvas EXIF 자동 회전 + 최대 1200px / quality 0.75 압축 (파일 크기 절감)
 
-### 6. 부서 로고
+### 8. 부서 로고
 - Supabase Storage `department-banners` 버킷 (Public)
 - 파일명: 영문 슬러그 (한국어 미지원) — 예: `고등부` → `godeungbu.png`
 - 매핑: `DashboardClient.tsx` 상단 `DEPARTMENT_BANNER_MAP` 객체에 등록
@@ -157,10 +178,11 @@ DB에 저장하지 않고, API에서 `SUM(income - expense)`를 페이지 오프
 | 영수증 | 영수증 제출, 내 제출 내역 | teacher/accountant/master |
 | 영수증 | 미승인 영수증, 직접 입력 | accountant/master |
 | 회계장부 | 회계장부 조회 | 전체 |
-| 회계장부 | 장부 관리, 엑셀 내보내기 | accountant/master |
+| 회계장부 | 장부 관리, 엑셀 내보내기 | accountant/master/sub_master |
 | 결산 | 결산 및 지출증빙 | 전체 |
 
-> auditor/sub_master는 영수증 제출/승인 메뉴 없음
+> auditor/overseer/admin_viewer는 영수증 제출/승인 메뉴 없음
+> CROSS_DEPT_ROLES는 헤더 부서 셀렉터로 열람 대상 부서 전환 가능
 
 ---
 
@@ -171,6 +193,8 @@ DB에 저장하지 않고, API에서 `SUM(income - expense)`를 페이지 오프
 | `users` | id, email, name, department_id (TEXT, 기본 '고등부'), position, role, status |
 | `positions` | id, name, sort_order, is_active |
 | `categories` | id, name, type (income/expense), keywords[], color, sort_order, is_active |
+| `departments` | id (TEXT PK, 예: '고등부'), name, parent_id, type, sort_order, is_active |
+| `user_departments` | user_id, department_id (복합 PK) — 겸임 부서 다중 연결용 |
 | `ledgers` | id, department_id, name, type (main/special), is_active, created_by |
 | `ledger_entries` | id, ledger_id, receipt_id (nullable), category_id, date, description, income, expense, source (receipt/manual/excel_import) |
 | `receipts` | id, department_id, submitted_by, status (pending/approved/rejected), date, final_amount, approved_amount, image_url, has_duplicate_warning, bank_name, account_holder, account_number |
@@ -182,6 +206,8 @@ DB에 저장하지 않고, API에서 `SUM(income - expense)`를 페이지 오프
 - `004_duplicate_warning.sql` — has_duplicate_warning 컬럼
 - `005_approved_amount.sql` — approved_amount 컬럼
 - `007_categories_accountant_access.sql` — 카테고리 RLS accountant 허용
+- `008_departments_and_new_roles.sql` — departments·user_departments 테이블 생성, overseer·admin_viewer 역할 추가, RLS 정책 업데이트, 고등부·중등부 시드 데이터
+- `009_ledgers_delete_policy.sql` — ledgers DELETE RLS 정책 (master, type=special, is_active=false)
 
 ---
 
@@ -218,6 +244,24 @@ await serviceClient.from('ledger_entries').update(...).eq('id', id);
 
 ---
 
+---
+
+## 주요 API 파라미터 패턴
+
+```ts
+// 전 부서 접근 역할의 부서 파라미터 처리 (ledgers, receipts, dashboard API 공통)
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+const isCrossDept = CROSS_DEPT_ROLES.includes(profile.role);
+const deptParam = searchParams.get('department_id');
+const targetDept = isCrossDept
+  ? (deptParam || null)          // cross-dept: 파라미터 있으면 필터, 없으면 전체
+  : profile.department_id;      // 일반: 본인 부서 강제
+```
+
+---
+
 ## 미구현 백로그
 
 - PDF 양식 기반 온라인 작성 페이지 (감사 자료 제출용, 사용자가 PDF 양식 제공 예정)
+- accountant 겸임 부서 다중 선택 UI (user_departments 테이블 존재, API/UI 미구현)
+- 전체 부서 집계 총괄 대시보드 (master용 — 현재는 부서 전환으로 개별 조회)

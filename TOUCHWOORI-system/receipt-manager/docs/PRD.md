@@ -1,23 +1,29 @@
 # TOUCHWOORI 영수증 관리 시스템 PRD
 
-> 마지막 업데이트: 2026-03-27
+> 마지막 업데이트: 2026-04-02
 
 ---
 
 ## 1. 서비스 개요
 
 ### 목적
-교회 고등부의 재정 집행 투명성 확보. 교사들이 지출한 영수증을 디지털로 제출하고, 회계교사가 검토·승인하여 장부에 자동 연동. 결산 시 감사 대비 지출증빙 PDF를 생성한다.
+교회 다부서(고등부, 중등부 등)의 재정 집행 투명성 확보. 교사들이 지출한 영수증을 디지털로 제출하고, 회계교사가 검토·승인하여 장부에 자동 연동. 결산 시 감사 대비 지출증빙 PDF를 생성한다. 마스터·감독 역할은 헤더 부서 셀렉터로 전 부서를 전환하며 열람·관리한다.
 
 ### 사용자 역할
 
-| 역할 | 설명 |
-|------|------|
-| `master` | 총무/담당자. 시스템 전체 관리 |
-| `sub_master` | 교육목사 등. 사용자 관리·역할 부여만 가능. 재정 기능 없음 |
-| `accountant` | 회계교사. 영수증 승인, 장부 관리, 결산, 카테고리 관리 |
-| `auditor` | 교육위원장 등. 전체 부서 열람 전용 (쓰기 불가) |
-| `teacher` | 일반교사. 영수증 제출·조회, 장부 조회 |
+| 역할 | UI 표시 | 설명 |
+|------|---------|------|
+| `master` | 마스터 | 총무/담당자. 시스템 전체 관리. 전 부서 열람·편집·삭제 |
+| `sub_master` | 서브마스터 | 교육목사 등. 사용자 관리·역할 부여 전담. 재정 기능 없음. 전 부서 열람 가능 |
+| `accountant` | 회계교사 | 영수증 승인, 장부 관리, 결산, 카테고리 관리 (본인 부서) |
+| `auditor` | 뷰어 | 본인 부서 장부·영수증 열람 전용 (쓰기 불가) |
+| `overseer` | 감독 | 감독 역할. 전 부서 장부·영수증 열람 전용 (쓰기 불가) |
+| `admin_viewer` | 행정열람 | 행정 담당자. 전 부서 장부·영수증 열람 전용 (쓰기 불가) |
+| `teacher` | 교사 | 일반교사. 영수증 제출·조회, 장부 조회 (본인 부서) |
+
+**전 부서 접근 역할 (CROSS_DEPT_ROLES)**: `master`, `sub_master`, `auditor`, `overseer`, `admin_viewer`
+- 헤더 부서 셀렉터로 활성 부서 전환 → 모든 페이지가 해당 부서 기준으로 필터링됨
+- 선택값은 localStorage에 유지 (새로고침 후 복원)
 
 ---
 
@@ -78,6 +84,13 @@
 - 영수증 연동 항목 수정 시 경고 배너 표시
 - 다중 항목 일괄 입력 모달
 - 엑셀 내보내기 (현재 필터 적용)
+- 부서에 장부가 없을 경우 "장부가 없습니다" 안내 + 관리 페이지 링크 표시
+- 본 장부 자동 생성: 특정 부서에 처음 접근할 때 "전체 회기" 장부 자동 생성
+
+### 2.8.1 장부 관리 (`/ledger/manage`)
+- 특수 장부 생성 (accountant, master, sub_master)
+- 특수 장부 종료 (비활성화)
+- 종료된 특수 장부 영구 삭제 (master 전용)
 
 ### 2.9 결산 및 지출증빙 (`/settlements`)
 - 기간 선택: 직접 입력 / 전반기(12~4월) / 후반기(5~11월)
@@ -95,6 +108,7 @@
 - 역할별 통계 카드 및 바로가기
 - 월별 수입/지출 추이 차트, 카테고리별 지출 파이 차트 (teacher 제외)
 - 부서 로고 표시 (Supabase Storage `department-banners` 버킷, 인사말 우측)
+- CROSS_DEPT_ROLES: activeDept 기준으로 해당 부서 통계·차트 표시
 
 ---
 
@@ -110,15 +124,18 @@
 | 영수증 | 영수증 제출, 내 제출 내역 | teacher, accountant, master |
 | 영수증 | 미승인 영수증, 직접 입력 | accountant, master |
 | 회계장부 | 회계장부 조회 | 전체 |
-| 회계장부 | 장부 관리, 엑셀 내보내기 | accountant, master |
+| 회계장부 | 장부 관리, 엑셀 내보내기 | accountant, master, sub_master |
 | 결산 | 결산 및 지출증빙 | 전체 |
 
-> auditor, sub_master는 영수증 제출·승인 메뉴 없음
+> auditor, overseer, admin_viewer, sub_master는 영수증 제출·승인 메뉴 없음
+> CROSS_DEPT_ROLES는 헤더 셀렉터로 부서 전환 가능 (선택 부서 기준으로 모든 메뉴 필터링)
 
 ### 모바일 하단 탭
 - teacher: 홈 / 제출 / 내역 / 장부
 - accountant: 홈 / 미승인 / 장부 / 결산
 - master: 홈 / 관리 / 장부 / 결산
+- sub_master: 홈 / 관리 / 장부 / 결산
+- auditor / overseer / admin_viewer: 홈 / 장부 / 결산
 
 ---
 
@@ -127,12 +144,51 @@
 | 기능 | 설명 |
 |------|------|
 | PDF 양식 온라인 작성 | 사용자 제공 PDF 양식을 온라인 폼으로 변환, 제출 데이터 Supabase 저장 → 감사 자료 활용 |
+| 겸임 부서 다중 선택 UI | accountant가 복수 부서를 담당할 경우 user_departments 테이블 기반으로 다중 부서 연결 (테이블 존재, UI/API 미구현) |
+| 전체 부서 총괄 대시보드 | master용 — 모든 부서 합산 통계를 한 화면에 표시 (현재는 부서 전환으로 개별 조회) |
 
 ---
 
 ## 5. 변경 이력
 
-### 2026-03-27 — 현재 버전
+### 2026-04-02 — 다부서 지원 및 역할 확장
+
+**아키텍처**
+- `departments` 테이블 신설 (id TEXT PK, name, type, sort_order, is_active)
+- `user_departments` 정션 테이블 신설 (겸임 부서 지원 기반)
+- 시드 데이터: 고등부(터치우리), 중등부(드림우리)
+- `src/lib/departments.ts` — 부서 상수 중앙 관리
+
+**신규 역할**
+- `overseer` (감독): 전 부서 열람 전용
+- `admin_viewer` (행정열람): 전 부서 열람 전용
+
+**전역 부서 전환 (DepartmentContext)**
+- 헤더에 부서 셀렉터 추가 (CROSS_DEPT_ROLES 소속만 표시)
+- 선택된 activeDept가 모든 페이지(장부, 영수증, 대시보드, 결산)에 전파
+- localStorage 기반 상태 유지
+
+**장부**
+- 본 장부 자동 생성 (신규 부서 최초 접근 시)
+- 종료된 특수 장부 영구 삭제 기능 (master 전용)
+- 장부 없을 때 빈 상태 안내 표시 (무한 로딩 버그 수정)
+
+**사용자 관리**
+- 부서 목록 동적 fetch (하드코딩 제거)
+- 역할 선택 UI에 overseer, admin_viewer 추가
+
+**버그 수정**
+- BottomTabs: auditor/sub_master/overseer/admin_viewer가 teacher 탭으로 떨어지던 문제 수정
+- ledger/page.tsx, receipts/pending/page.tsx: loading 초기값 true → false (무한 로딩 수정)
+- master의 타 부서 장부·영수증 접근 불가 → CROSS_DEPT_ROLES 패턴으로 수정
+
+**마이그레이션**
+- `008_departments_and_new_roles.sql`
+- `009_ledgers_delete_policy.sql`
+
+---
+
+### 2026-03-27 — 이전 버전
 
 **제거**
 - 결산기 관리 기능 전체 제거 (`/master/settlements`, `/settlements/history`, `/api/settlements`, `Settlement` 타입)
