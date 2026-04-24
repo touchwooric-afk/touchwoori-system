@@ -1,6 +1,6 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
-import { createServerClient } from '@/lib/supabase-server';
+import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
 // POST: 정산서 PDF 데이터 생성 (PDF 렌더링은 클라이언트에서 @react-pdf/renderer로 처리)
@@ -71,8 +71,11 @@ export async function POST(request: NextRequest) {
       targetLedgerId = mainLedger.id;
     }
 
+    // receipts RLS는 teacher를 제외하므로 serviceClient로 조회 (API 레벨 권한 검증 완료 후)
+    const serviceClient = createServiceClient();
+
     // 이월 잔액: startDate 이전의 모든 항목 합산 (수입 - 지출)
-    const { data: priorEntries } = await supabase
+    const { data: priorEntries } = await serviceClient
       .from('ledger_entries')
       .select('income, expense')
       .eq('ledger_id', targetLedgerId)
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 기간 내 전체 항목 조회 (수입 + 지출 모두)
-    const { data: allEntries, error } = await supabase
+    const { data: allEntries, error } = await serviceClient
       .from('ledger_entries')
       .select('*, categories(*), receipts!receipt_id(id, image_url)')
       .eq('ledger_id', targetLedgerId)
