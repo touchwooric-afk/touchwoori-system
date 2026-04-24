@@ -281,7 +281,9 @@ function LedgerPageInner() {
       case 'date':
         return (
           a.date.localeCompare(b.date) ||
-          a.created_at.localeCompare(b.created_at)
+          a.description.localeCompare(b.description) ||
+          (amount(a) - amount(b)) ||
+          (a.category?.name || '').localeCompare(b.category?.name || '')
         ) * dir;
       case 'income':
         return (
