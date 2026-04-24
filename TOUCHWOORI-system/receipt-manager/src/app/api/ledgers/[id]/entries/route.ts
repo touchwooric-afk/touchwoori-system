@@ -1,12 +1,7 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
-
-// 전체 부서 읽기 가능 역할
-const CROSS_DEPT_READ_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
-// 전체 부서 쓰기 가능 역할 (master만)
-const CROSS_DEPT_WRITE_ROLES = ['master'];
 
 // GET: 장부 항목 목록 조회 (활성 사용자, teachers는 읽기 전용)
 export async function GET(
@@ -57,12 +52,16 @@ export async function GET(
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
-    if (!CROSS_DEPT_READ_ROLES.includes(profile.role) && ledger.department_id !== profile.department_id) {
+    if (ledger.department_id !== profile.department_id) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
+    // receipts RLS는 teacher를 제외하므로 receipts 조인 시 serviceClient 사용
+    // (API 레벨에서 이미 부서·권한 검증 완료)
+    const serviceClient = createServiceClient();
+
     // running balance를 포함한 RPC 호출 또는 직접 쿼리
-    let query = supabase
+    let query = serviceClient
       .from('ledger_entries')
       .select('*, categories(*), receipts!receipt_id(id, image_url)', { count: 'exact' })
       .eq('ledger_id', ledgerId);
@@ -234,7 +233,7 @@ export async function POST(
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
-    if (!CROSS_DEPT_WRITE_ROLES.includes(profile.role) && ledger.department_id !== profile.department_id) {
+    if (ledger.department_id !== profile.department_id) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
