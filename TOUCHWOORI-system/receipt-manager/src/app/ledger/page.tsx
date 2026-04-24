@@ -254,16 +254,14 @@ function LedgerPageInner() {
   }, [selectedLedgerId, fetchEntries]);
 
   // Client-side sort
-  const sortedEntries = [...entries].sort((a, b) => {
+  const sorted = [...entries].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const amount = (e: typeof a) => e.income || e.expense;
     switch (sortField) {
       case 'date':
         return (
           a.date.localeCompare(b.date) ||
-          a.description.localeCompare(b.description) ||
-          (amount(a) - amount(b)) ||
-          (a.category?.name || '').localeCompare(b.category?.name || '')
+          a.created_at.localeCompare(b.created_at)
         ) * dir;
       case 'income':
         return (
@@ -289,6 +287,16 @@ function LedgerPageInner() {
       default:
         return 0;
     }
+  });
+
+  // 표시 순서에 맞게 잔액 재계산 (정렬 변경 시 balance가 항목을 따라다니는 문제 방지)
+  const pageStartBalance = entries.length > 0
+    ? entries[0].balance - (entries[0].income - entries[0].expense)
+    : 0;
+  let runningBal = pageStartBalance;
+  const sortedEntries = sorted.map((entry) => {
+    runningBal += (entry.income || 0) - (entry.expense || 0);
+    return { ...entry, balance: runningBal };
   });
 
   const handleSort = (field: SortField) => {
