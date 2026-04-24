@@ -94,6 +94,7 @@ function LedgerPageInner() {
   const [submitting, setSubmitting] = useState(false);
   const [autoSuggest, setAutoSuggest] = useState(true);
   const tableRef = useRef<HTMLTableElement>(null);
+  const jumpToLastPage = useRef(false);
 
   // 단축키: ⌘S / Ctrl+S → 항목 저장 (모달 열려있을 때만)
   const saveShortcut = useHotkey('s', { meta: true }, () => handleAddSubmit(), { enabled: addModalOpen });
@@ -221,8 +222,20 @@ function LedgerPageInner() {
       const res = await fetch(`/api/ledgers/${selectedLedgerId}/entries?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
+      const totalCount = json.total || 0;
+
+      // 장부 첫 접속 시 마지막 페이지(최신 항목)로 자동 이동
+      if (jumpToLastPage.current) {
+        jumpToLastPage.current = false;
+        const lastPage = Math.ceil(totalCount / PAGE_SIZE);
+        if (lastPage > 1) {
+          setPage(lastPage);
+          return; // 마지막 페이지로 재요청
+        }
+      }
+
       setEntries(json.data || []);
-      setTotal(json.total || 0);
+      setTotal(totalCount);
       setTotalIncome(json.totalIncome  || 0);
       setTotalExpense(json.totalExpense || 0);
       setTotalAll(json.totalAll                       || 0);
@@ -246,9 +259,16 @@ function LedgerPageInner() {
     fetchCategories();
   }, [fetchLedgers, fetchCategories]);
 
+  // 장부가 바뀔 때만 마지막 페이지 점프 플래그 설정
   useEffect(() => {
     if (selectedLedgerId) {
+      jumpToLastPage.current = true;
       setSelectedIds(new Set());
+    }
+  }, [selectedLedgerId]);
+
+  useEffect(() => {
+    if (selectedLedgerId) {
       fetchEntries();
     }
   }, [selectedLedgerId, fetchEntries]);
@@ -663,6 +683,7 @@ function LedgerPageInner() {
               onChange={(e) => {
                 setSelectedLedgerId(e.target.value);
                 setPage(1);
+                jumpToLastPage.current = true;
               }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm
                 focus:ring-2 focus:ring-primary-500 focus:border-primary-500
