@@ -311,15 +311,9 @@ function LedgerPageInner() {
     }
   });
 
-  // 표시 순서에 맞게 잔액 재계산 (정렬 변경 시 balance가 항목을 따라다니는 문제 방지)
-  const pageStartBalance = entries.length > 0
-    ? entries[0].balance - (entries[0].income - entries[0].expense)
-    : 0;
-  let runningBal = pageStartBalance;
-  const sortedEntries = sorted.map((entry) => {
-    runningBal += (entry.income || 0) - (entry.expense || 0);
-    return { ...entry, balance: runningBal };
-  });
+  // 서버가 date→description→income→expense 순으로 정확한 잔액을 계산해서 반환
+  // 클라이언트 기본 정렬(date asc)은 서버와 동일하므로 재계산 불필요
+  const sortedEntries = sorted;
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

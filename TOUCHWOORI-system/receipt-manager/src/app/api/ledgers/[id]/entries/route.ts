@@ -94,7 +94,9 @@ export async function GET(
 
     query = query
       .order('date', { ascending: true })
-      .order('created_at', { ascending: true })
+      .order('description', { ascending: true })
+      .order('income', { ascending: true })
+      .order('expense', { ascending: true })
       .range(offset, offset + pageSize - 1);
 
     const { data: entries, error, count } = await query;
@@ -151,7 +153,9 @@ export async function GET(
 
       prevQuery = prevQuery
         .order('date', { ascending: true })
-        .order('created_at', { ascending: true })
+        .order('description', { ascending: true })
+        .order('income', { ascending: true })
+        .order('expense', { ascending: true })
         .range(0, offset - 1);
 
       const { data: prevEntries } = await prevQuery;
