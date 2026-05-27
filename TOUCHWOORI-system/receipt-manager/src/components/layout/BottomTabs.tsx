@@ -11,6 +11,7 @@ import {
   FileText,
   Users,
   FileCheck,
+  CalendarCheck,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useUser } from '@/hooks/useUser';
@@ -34,14 +35,14 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
         { label: '홈', href: '/', icon: LayoutDashboard },
         { label: '영수증', href: '/receipts/pending', icon: FileCheck },
         { label: '관리', href: '/master/users', icon: Users, badge: pendingUserCount },
-        { label: '장부', href: '/ledger', icon: BookOpen },
+        { label: '출석', href: '/attendance', icon: CalendarCheck },
         { label: '결산', href: '/settlements', icon: FileText },
       ];
     case 'accountant':
       return [
         { label: '홈', href: '/', icon: LayoutDashboard },
         { label: '미승인', href: '/receipts/pending', icon: ClipboardList },
-        { label: '제출', href: '/receipts/upload', icon: Receipt },
+        { label: '출석', href: '/attendance', icon: CalendarCheck },
         { label: '장부', href: '/ledger', icon: BookOpen },
         { label: '결산', href: '/settlements', icon: FileText },
       ];
@@ -49,8 +50,8 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
       return [
         { label: '홈', href: '/', icon: LayoutDashboard },
         { label: '관리', href: '/master/users', icon: Users, badge: pendingUserCount },
+        { label: '출석', href: '/attendance', icon: CalendarCheck },
         { label: '장부', href: '/ledger', icon: BookOpen },
-        { label: '결산', href: '/settlements', icon: FileText },
       ];
     case 'auditor':
     case 'overseer':
@@ -66,7 +67,7 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
         { label: '홈', href: '/', icon: LayoutDashboard },
         { label: '제출', href: '/receipts/upload', icon: Receipt },
         { label: '내역', href: '/receipts/my', icon: ClipboardList, badge: rejectedCount },
-        { label: '장부', href: '/ledger', icon: BookOpen },
+        { label: '출석', href: '/attendance', icon: CalendarCheck },
       ];
   }
 }
@@ -106,7 +107,7 @@ export default function BottomTabs({ role }: BottomTabsProps) {
   const tabs = getTabs(role, pendingUserCount, rejectedCount);
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 safe-area-inset-bottom">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 glass-header border-t safe-area-inset-bottom">
       <div className="flex items-center justify-around h-14">
         {tabs.map((tab) => {
           const isActive =

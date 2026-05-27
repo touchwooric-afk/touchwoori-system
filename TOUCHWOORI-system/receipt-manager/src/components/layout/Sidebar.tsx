@@ -15,6 +15,8 @@ import {
   UserCircle,
   Upload,
   PlusCircle,
+  CalendarCheck,
+  UserRoundCog,
 } from 'lucide-react';
 import { useUser } from '@/hooks/useUser';
 import { createClient } from '@/lib/supabase';
@@ -55,6 +57,8 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   const isTeacher    = role === 'teacher';
   const isReadOnly   = isAuditor || isOverseer || isAdminViewer; // 쓰기 권한 없는 열람 역할
   const canWrite     = isMaster || isAccountant; // 재정 쓰기 권한
+  const canCheckAttendance = isMaster || isSubMaster || isAccountant || isTeacher;
+  const canManageAttendance = isMaster || isSubMaster || isAccountant;
 
   // 시스템 관리
   if (isMaster) {
@@ -74,6 +78,18 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
       title: '운영',
       items: [
         { label: '사용자 관리', href: '/master/users', icon: Users, badge: pendingUserCount },
+      ],
+    });
+  }
+
+  if (canCheckAttendance) {
+    groups.push({
+      title: '출석관리',
+      items: [
+        { label: '출석 체크', href: '/attendance', icon: CalendarCheck },
+        ...(canManageAttendance
+          ? [{ label: '출석 명단 관리', href: '/attendance/roster', icon: UserRoundCog }]
+          : []),
       ],
     });
   }
@@ -181,8 +197,8 @@ export default function Sidebar({ role, mobile = false }: SidebarProps) {
   return (
     <aside className={
       mobile
-        ? 'flex flex-col w-full h-full bg-white'
-        : 'hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 bg-white border-r border-gray-200'
+        ? 'flex flex-col w-full h-full'
+        : 'hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 glass-header border-r'
     }>
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => (

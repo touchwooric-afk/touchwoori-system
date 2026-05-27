@@ -20,7 +20,7 @@ export default function PendingPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-info-50 px-4">
       <div className="w-full max-w-sm text-center">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
+        <div className="glass-popover rounded-2xl p-8">
           <div className="rounded-full bg-warning-50 p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <Clock className="h-8 w-8 text-warning-500" />
           </div>

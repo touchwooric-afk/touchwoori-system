@@ -42,12 +42,12 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-info-50 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
             TOUCHWOORI
           </h1>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="glass-popover rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-2">비밀번호 재설정</h2>
 
           {sent ? (

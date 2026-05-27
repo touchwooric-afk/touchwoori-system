@@ -475,7 +475,7 @@ export default function ReceiptDetailPage() {
         )}
 
         {/* Details card */}
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="glass-panel rounded-xl p-6">
           {editing ? (
             /* Edit mode */
             <div className="space-y-4">
@@ -701,7 +701,7 @@ export default function ReceiptDetailPage() {
       {/* Reject modal */}
       {rejectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6">
+          <div className="w-full max-w-sm glass-popover rounded-2xl p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">영수증 반려</h3>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">

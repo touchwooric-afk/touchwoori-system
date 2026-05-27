@@ -185,7 +185,7 @@ export default function PendingReceiptsPage() {
       const ledgerJson = await ledgerRes.json();
       if (!ledgerRes.ok) throw new Error(ledgerJson.error);
       const mainLedger = (ledgerJson.data as { id: string; type: string }[]).find(l => l.type === 'main');
-      if (!mainLedger) throw new Error('본 장부를 찾을 수 없습니다');
+      if (!mainLedger) throw new Error('전체 장부를 찾을 수 없습니다');
 
       const entriesRes = await fetch(`/api/ledgers/${mainLedger.id}/entries?pageSize=100`);
       const entriesJson = await entriesRes.json();
@@ -438,7 +438,7 @@ export default function PendingReceiptsPage() {
         })()}
 
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm p-6 animate-pulse">
+          <div className="glass-panel rounded-xl p-6 animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-full mb-4" />
             <div className="h-4 bg-gray-200 rounded w-full mb-4" />
             <div className="h-4 bg-gray-200 rounded w-2/3" />
@@ -576,7 +576,7 @@ export default function PendingReceiptsPage() {
             </div>
 
             {/* Desktop table view */}
-            <div className="hidden md:block bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="hidden md:block glass-panel rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>

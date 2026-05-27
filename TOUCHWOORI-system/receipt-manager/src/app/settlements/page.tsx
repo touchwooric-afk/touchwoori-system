@@ -53,6 +53,12 @@ interface ExpenseItem {
   imageUrl: string | null;
 }
 
+interface ReceiptPdfItem extends ExpenseItem {
+  imageSrc: string | null;
+  sliceIndex?: number;
+  sliceTotal?: number;
+}
+
 interface CatSummary {
   category: string;
   total: number;
@@ -197,22 +203,55 @@ export default function SettlementsPage() {
     }
   };
 
-  // 이미지를 canvas로 로드하여 EXIF 방향 자동 보정 + 리사이즈 + dataURL 변환
-  const normalizeImage = (url: string): Promise<string> => {
-    const MAX_PX = 1200; // 200dpi 인쇄 품질 기준 최대 해상도
+  // 이미지를 canvas로 로드해 PDF 친화적인 JPEG dataURL로 변환합니다.
+  // 세로가 긴 모바일 캡처는 한 칸에 넣으면 너무 작아져서 여러 조각으로 분할합니다.
+  const normalizeImage = (url: string): Promise<string[]> => {
+    const MAX_W = 1600;
+    const MAX_DIM = 1800;
+    const PDF_CELL_RATIO = 1.32; // 영수증 PDF 셀의 대략적인 세로/가로 비율
+    const TALL_RATIO = 2.4;
+
     return new Promise((resolve) => {
       const img = new window.Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ratio = Math.min(MAX_PX / img.naturalWidth, MAX_PX / img.naturalHeight, 1);
-        canvas.width = Math.round(img.naturalWidth * ratio);
-        canvas.height = Math.round(img.naturalHeight * ratio);
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.75));
+        try {
+          const sourceW = img.naturalWidth;
+          const sourceH = img.naturalHeight;
+          const sourceRatio = sourceH / sourceW;
+          const sliceCount = sourceRatio > TALL_RATIO
+            ? Math.ceil(sourceRatio / PDF_CELL_RATIO)
+            : 1;
+          const urls: string[] = [];
+
+          for (let i = 0; i < sliceCount; i++) {
+            const sy = Math.round((sourceH / sliceCount) * i);
+            const nextSy = i === sliceCount - 1
+              ? sourceH
+              : Math.round((sourceH / sliceCount) * (i + 1));
+            const sliceH = nextSy - sy;
+            const scale = sliceCount > 1
+              ? Math.min(MAX_W / sourceW, 1)
+              : Math.min(MAX_DIM / sourceW, MAX_DIM / sourceH, 1);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(sourceW * scale));
+            canvas.height = Math.max(1, Math.round(sliceH * scale));
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, sy, sourceW, sliceH, 0, 0, canvas.width, canvas.height);
+            urls.push(canvas.toDataURL('image/jpeg', 0.82));
+          }
+
+          resolve(urls.length > 0 ? urls : [url]);
+        } catch {
+          resolve([url]);
+        }
       };
-      img.onerror = () => resolve(url); // 실패 시 원본 URL 그대로
+      img.onerror = () => resolve([url]); // 실패 시 원본 URL 그대로
       img.src = url;
     });
   };
@@ -224,11 +263,11 @@ export default function SettlementsPage() {
     try {
       // 이미지 EXIF 방향 보정을 위한 전처리
       const imageUrls = pdfData.expenseItems.map((item) => item.imageUrl).filter(Boolean) as string[];
-      const normalizedMap = new Map<string, string>();
+      const normalizedMap = new Map<string, string[]>();
       if (imageUrls.length > 0) {
         const results = await Promise.all(imageUrls.map(async (url) => {
-          const dataUrl = await normalizeImage(url);
-          return [url, dataUrl] as const;
+          const dataUrls = await normalizeImage(url);
+          return [url, dataUrls] as const;
         }));
         for (const [orig, data] of results) normalizedMap.set(orig, data);
       }
@@ -298,18 +337,31 @@ export default function SettlementsPage() {
       });
 
       // ── 영수증 이미지 페이지 분할 ──
-      const receiptPages: ExpenseItem[][] = [];
-      for (let i = 0; i < pdfData.expenseItems.length; i += 4) {
-        receiptPages.push(pdfData.expenseItems.slice(i, i + 4));
+      const receiptItems: ReceiptPdfItem[] = pdfData.expenseItems.flatMap<ReceiptPdfItem>((item) => {
+        if (!item.imageUrl) return [{ ...item, imageSrc: null, sliceIndex: undefined, sliceTotal: undefined }];
+        const sources = normalizedMap.get(item.imageUrl) || [item.imageUrl];
+        return sources.map((src, index) => ({
+          ...item,
+          imageSrc: src,
+          sliceIndex: sources.length > 1 ? index + 1 : undefined,
+          sliceTotal: sources.length > 1 ? sources.length : undefined,
+        }));
+      });
+
+      const receiptPages: ReceiptPdfItem[][] = [];
+      for (let i = 0; i < receiptItems.length; i += 4) {
+        receiptPages.push(receiptItems.slice(i, i + 4));
       }
       const totalPages = 1 + receiptPages.length;
 
-      const renderCell = (item: ExpenseItem, i: number) => {
-        const imgSrc = item.imageUrl ? (normalizedMap.get(item.imageUrl) || item.imageUrl) : null;
+      const renderCell = (item: ReceiptPdfItem, i: number) => {
+        const imgSrc = item.imageSrc;
         return (
           <View key={i} style={styles.cell}>
             <View style={styles.cellHeader}>
-              <Text style={styles.cellDesc}>{item.description}</Text>
+              <Text style={styles.cellDesc}>
+                {item.description}{item.sliceTotal ? ` (${item.sliceIndex}/${item.sliceTotal})` : ''}
+              </Text>
               <Text style={styles.cellMeta}>{item.date} · {item.categoryName}</Text>
               <Text style={styles.cellAmount}>{item.amount.toLocaleString('ko-KR')}원</Text>
             </View>
@@ -429,7 +481,7 @@ export default function SettlementsPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Page header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2.5">
               <FileText className="h-6 w-6" />
@@ -445,7 +497,7 @@ export default function SettlementsPage() {
         {loading ? (
           <CardSkeleton />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+          <div className="glass-panel rounded-xl p-5 space-y-4">
             {/* Settlement selector */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">결산 기간 선택</label>
@@ -539,7 +591,7 @@ export default function SettlementsPage() {
             {/* Ledger */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                장부 <span className="text-xs text-gray-400">(미선택 시 본 장부)</span>
+                장부 <span className="text-xs text-gray-400">(전체 장부 선택 시 활성 장부 전체 포함)</span>
               </label>
               <select
                 value={selectedLedger}
@@ -548,10 +600,10 @@ export default function SettlementsPage() {
                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                   outline-none transition-shadow"
               >
-                <option value="">본 장부 (기본)</option>
+                <option value="">전체 장부 (기본)</option>
                 {ledgers.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name}
+                    {l.type === 'main' ? '전체 장부' : l.name}
                   </option>
                 ))}
               </select>
@@ -589,7 +641,7 @@ export default function SettlementsPage() {
             ) : (
               <>
                 {/* Summary card */}
-                <div className="bg-white rounded-xl shadow-sm p-5">
+                <div className="glass-panel rounded-xl p-5">
                   <h2 className="text-lg font-semibold text-gray-900 mb-1">{pdfData.title}</h2>
                   <p className="text-sm text-gray-500 mb-4">
                     {formatDateShort(pdfData.period.startDate)} ~{' '}
@@ -679,7 +731,7 @@ export default function SettlementsPage() {
                     <h3 className="text-base font-semibold text-gray-800 mb-3">지출 영수증 ({pdfData.expenseItems.length}건)</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {pdfData.expenseItems.map((item, i) => (
-                        <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div key={i} className="glass-panel rounded-xl overflow-hidden">
                           <div className="p-4">
                             <h3 className="text-sm font-semibold text-gray-900 truncate">{item.description}</h3>
                           </div>

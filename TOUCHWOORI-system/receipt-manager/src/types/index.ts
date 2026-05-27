@@ -9,6 +9,9 @@ export type EntrySource = 'receipt' | 'manual' | 'excel_import';
 export type CategoryType = 'income' | 'expense';
 export type ExcelSyncType = 'import' | 'export';
 export type ExcelSyncStatus = 'success' | 'partial' | 'failed';
+export type AttendanceMemberType = 'student' | 'teacher';
+export type AttendanceStudentKind = 'enrolled' | 'newcomer';
+export type AttendanceStatus = 'present' | 'absent' | 'late';
 
 // ============================================
 // 엔티티 타입
@@ -73,6 +76,7 @@ export interface LedgerEntry {
 export interface LedgerEntryWithBalance extends LedgerEntry {
   balance: number;
   category?: Category;
+  ledger_name?: string | null;
 }
 
 
@@ -141,6 +145,45 @@ export interface UserDepartment {
   user_id: string;
   department_id: string;
   created_at: string;
+}
+
+export interface AttendanceMember {
+  id: string;
+  department_id: string;
+  member_type: AttendanceMemberType;
+  name: string;
+  grade: number | null;
+  position: string | null;
+  is_homeroom: boolean;
+  student_kind: AttendanceStudentKind | null;
+  active_from: string;
+  active_until: string | null;
+  is_active: boolean;
+  memo: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AttendanceSession {
+  id: string;
+  department_id: string;
+  attendance_date: string;
+  week_label: string;
+  title: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  session_id: string;
+  member_id: string;
+  status: AttendanceStatus;
+  checked_by: string | null;
+  created_at: string;
+  updated_at: string;
+  member?: AttendanceMember;
 }
 
 export interface ExcelSync {

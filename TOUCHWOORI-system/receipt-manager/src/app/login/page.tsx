@@ -66,14 +66,14 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* 로고 */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
             TOUCHWOORI
           </h1>
           <p className="mt-2 text-sm text-gray-500">고등부 영수증 관리 시스템</p>
         </div>
 
         {/* 로그인 카드 */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="glass-popover rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">로그인</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">

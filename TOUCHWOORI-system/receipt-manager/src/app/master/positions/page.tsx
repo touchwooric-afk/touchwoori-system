@@ -162,7 +162,7 @@ export default function PositionsPage() {
     <AppShell>
       <div className="space-y-6">
         {/* 페이지 헤더 */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">
@@ -196,7 +196,7 @@ export default function PositionsPage() {
             onAction={openAddModal}
           />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="glass-panel rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>

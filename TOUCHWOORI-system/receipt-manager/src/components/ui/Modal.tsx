@@ -65,7 +65,7 @@ export default function Modal({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/36 p-4 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === overlayRef.current) handleClose();
       }}
@@ -74,7 +74,7 @@ export default function Modal({
         role="dialog"
         aria-labelledby="modal-title"
         className={`
-          w-full ${sizeStyles[size]} bg-white rounded-2xl shadow-2xl
+          w-full ${sizeStyles[size]} glass-popover rounded-2xl
           animate-scale-up max-h-[90vh] flex flex-col
         `}
       >

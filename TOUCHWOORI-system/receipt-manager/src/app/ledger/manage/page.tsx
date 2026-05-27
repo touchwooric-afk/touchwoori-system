@@ -150,7 +150,7 @@ export default function LedgerManagePage() {
     <AppShell>
       <div className="space-y-6">
         {/* Page header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">
@@ -195,7 +195,7 @@ export default function LedgerManagePage() {
             {ledgers.map((ledger) => (
               <div
                 key={ledger.id}
-                className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5
+                className={`glass-panel rounded-xl p-5
                   hover:shadow-md transition-all duration-200
                   ${!ledger.is_active ? 'opacity-60' : ''}`}
               >
@@ -212,7 +212,7 @@ export default function LedgerManagePage() {
                             : 'bg-gray-100 text-gray-600'
                         }`}
                       >
-                        {ledger.type === 'main' ? '본 장부' : '특수 장부'}
+                        {ledger.type === 'main' ? '기본 통합 장부' : '특수 장부'}
                       </span>
                     </div>
                     {ledger.description && (
@@ -257,7 +257,7 @@ export default function LedgerManagePage() {
                   )}
                   {ledger.type === 'main' && (
                     <span className="text-xs text-gray-400 flex items-center ml-2">
-                      본 장부는 비활성화할 수 없습니다
+                      기본 통합 장부는 비활성화할 수 없습니다
                     </span>
                   )}
                 </div>

@@ -19,18 +19,7 @@ export default function Pagination({
 
   if (totalPages <= 1) return null;
 
-  const pages: (number | 'ellipsis')[] = [];
-  for (let i = 1; i <= totalPages; i++) {
-    if (
-      i === 1 ||
-      i === totalPages ||
-      (i >= currentPage - 1 && i <= currentPage + 1)
-    ) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== 'ellipsis') {
-      pages.push('ellipsis');
-    }
-  }
+  const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
     <nav className="flex items-center justify-center gap-1 mt-6" aria-label="페이지 네비게이션">
@@ -43,12 +32,8 @@ export default function Pagination({
         <ChevronLeft className="h-4 w-4" />
       </button>
 
-      {pages.map((page, i) =>
-        page === 'ellipsis' ? (
-          <span key={`e-${i}`} className="px-2 text-gray-400">
-            …
-          </span>
-        ) : (
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto px-1 py-1">
+        {pages.map((page) => (
           <button
             key={page}
             onClick={() => onPageChange(page)}
@@ -63,8 +48,8 @@ export default function Pagination({
           >
             {page}
           </button>
-        )
-      )}
+        ))}
+      </div>
 
       <button
         onClick={() => onPageChange(currentPage + 1)}

@@ -126,13 +126,13 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-info-50 px-4 py-8">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
             TOUCHWOORI
           </h1>
           <p className="mt-2 text-sm text-gray-500">계정 신청</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="glass-popover rounded-2xl p-6">
           {success ? (
             <div className="text-center py-6 space-y-4">
               <div className="mx-auto w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">

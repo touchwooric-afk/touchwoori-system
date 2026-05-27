@@ -12,7 +12,7 @@ export function Skeleton({ className = '' }: SkeletonProps) {
 
 export function CardSkeleton() {
   return (
-    <div className="rounded-xl bg-white shadow-sm p-6 space-y-4">
+    <div className="rounded-xl glass-panel p-6 space-y-4">
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-8 w-1/2" />
       <Skeleton className="h-4 w-2/3" />
@@ -34,7 +34,7 @@ export function TableRowSkeleton({ cols = 5 }: { cols?: number }) {
 
 export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
   return (
-    <div className="rounded-xl bg-white shadow-sm overflow-hidden">
+    <div className="rounded-xl glass-panel overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="bg-gray-50">

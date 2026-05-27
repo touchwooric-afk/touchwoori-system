@@ -46,7 +46,7 @@ export async function POST(
     const now = new Date().toISOString();
     const results: { approved: string[]; failed: string[] } = { approved: [], failed: [] };
 
-    // 부서의 본 장부(main) 찾기
+    // 부서의 전체 장부(main) 찾기
     const { data: mainLedger } = await supabase
       .from('ledgers')
       .select('id')
@@ -57,7 +57,7 @@ export async function POST(
 
     if (!mainLedger) {
       return NextResponse.json(
-        { error: '부서의 본 장부를 찾을 수 없습니다. 장부를 먼저 생성해주세요.' },
+        { error: '부서의 전체 장부를 찾을 수 없습니다. 장부를 먼저 생성해주세요.' },
         { status: 400 }
       );
     }

@@ -76,7 +76,7 @@ export default function ExcelExportPage() {
     <AppShell>
       <div className="space-y-6 max-w-lg">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2.5">
               <FileSpreadsheet className="h-6 w-6" />
@@ -88,7 +88,7 @@ export default function ExcelExportPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+        <div className="glass-panel rounded-xl p-5 space-y-4">
           {/* 장부 선택 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">장부</label>

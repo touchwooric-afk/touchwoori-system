@@ -106,8 +106,8 @@ function StatCard({
         rounded-xl p-6 text-left transition-all duration-200
         hover:-translate-y-1 hover:shadow-md w-full
         ${gradient
-          ? 'bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg'
-          : 'bg-white shadow-sm border border-gray-100'
+          ? 'bg-gradient-to-r from-primary-700 to-primary-500 text-white shadow-lg'
+          : 'glass-panel'
         }
       `}
     >
@@ -135,8 +135,8 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
   if (chartLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 h-72 animate-pulse" />
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 h-72 animate-pulse" />
+        <div className="glass-panel rounded-xl p-5 h-72 animate-pulse" />
+        <div className="glass-panel rounded-xl p-5 h-72 animate-pulse" />
       </div>
     );
   }
@@ -170,7 +170,7 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
   });
 
   if (!hasMonthly && !hasPie) return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+    <div className="glass-panel rounded-xl p-8 text-center">
       <p className="text-sm font-medium text-gray-500">아직 장부 데이터가 없습니다</p>
       <p className="text-xs text-gray-400 mt-1">회계 교사 선생님에게 문의하세요</p>
     </div>
@@ -180,7 +180,7 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 월별 수입/지출 막대 */}
       {hasMonthly && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div className="glass-panel rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-700">월별 수입 / 지출 (최근 6개월)</h2>
             <div className="flex items-center gap-3">
@@ -299,7 +299,7 @@ function ChartSection({ chartData, chartLoading }: { chartData: ChartData | null
       )}
 
       {/* 카테고리별 지출 도넛 + 월 선택 */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+      <div className="glass-panel rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-700">
             {selectedLabel} 카테고리별 지출

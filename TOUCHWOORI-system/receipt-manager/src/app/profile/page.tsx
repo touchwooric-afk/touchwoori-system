@@ -123,7 +123,7 @@ export default function ProfilePage() {
     <AppShell>
       <div className="space-y-6 max-w-2xl mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2.5">
               <UserIcon className="h-6 w-6" />
@@ -136,7 +136,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Profile info */}
-        <div className="bg-white rounded-xl shadow-sm p-5">
+        <div className="glass-panel rounded-xl p-5">
           <h2 className="text-base font-semibold text-gray-900 mb-4">기본 정보</h2>
           <div className="space-y-3">
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
@@ -163,7 +163,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Password change */}
-        <div className="bg-white rounded-xl shadow-sm p-5">
+        <div className="glass-panel rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Lock className="h-4 w-4 text-gray-500" />
             <h2 className="text-base font-semibold text-gray-900">비밀번호 변경</h2>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Recent submissions */}
-        <div className="bg-white rounded-xl shadow-sm p-5">
+        <div className="glass-panel rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-gray-500" />

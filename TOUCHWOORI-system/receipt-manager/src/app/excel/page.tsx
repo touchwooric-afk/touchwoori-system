@@ -321,7 +321,7 @@ export default function ExcelPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2.5">
               <FileSpreadsheet className="h-6 w-6" />
@@ -335,7 +335,7 @@ export default function ExcelPage() {
 
         <div className={`grid gap-6 ${preview ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
           {/* ─── Import Section ─── */}
-          <div className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+          <div className="glass-panel rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
               <Upload className="h-5 w-5 text-primary-600" />
               <h2 className="text-lg font-semibold text-gray-900">가져오기</h2>
@@ -614,7 +614,7 @@ export default function ExcelPage() {
           {/* ─── Export Section ─── */}
           {preview ? (
             // 미리보기 중: 한 줄 compact 형태
-            <div className="bg-white rounded-xl shadow-sm px-5 py-4">
+            <div className="glass-panel rounded-xl px-5 py-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2 shrink-0">
                   <Download className="h-4 w-4 text-primary-600" />
@@ -651,7 +651,7 @@ export default function ExcelPage() {
             </div>
           ) : (
             // 기본 상태: 풀 카드
-            <div className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <div className="glass-panel rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
                 <Download className="h-5 w-5 text-primary-600" />
                 <h2 className="text-lg font-semibold text-gray-900">내보내기</h2>

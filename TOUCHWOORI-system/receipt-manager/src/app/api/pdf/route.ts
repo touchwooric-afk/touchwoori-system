@@ -36,11 +36,13 @@ export async function POST(request: NextRequest) {
     // Teacher는 자기 부서만 접근 가능
     // ledgerId가 지정된 경우 해당 장부의 부서 확인
     let targetLedgerId = ledgerId;
+    let targetDepartmentId = profile.department_id;
+    let targetLedgerType: 'main' | 'special' = 'main';
 
     if (targetLedgerId) {
       const { data: ledger } = await supabase
         .from('ledgers')
-        .select('department_id')
+        .select('department_id, type')
         .eq('id', targetLedgerId)
         .single();
 
@@ -51,11 +53,14 @@ export async function POST(request: NextRequest) {
       if (profile.role === 'teacher' && ledger.department_id !== profile.department_id) {
         return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
       }
+
+      targetDepartmentId = ledger.department_id;
+      targetLedgerType = ledger.type;
     } else {
-      // ledgerId 미지정 시 부서의 본 장부 사용
+      // ledgerId 미지정 시 부서의 전체 장부(main)를 사용
       const { data: mainLedger } = await supabase
         .from('ledgers')
-        .select('id')
+        .select('id, department_id, type')
         .eq('department_id', profile.department_id)
         .eq('type', 'main')
         .eq('is_active', true)
@@ -63,37 +68,64 @@ export async function POST(request: NextRequest) {
 
       if (!mainLedger) {
         return NextResponse.json(
-          { error: '부서의 본 장부를 찾을 수 없습니다' },
+          { error: '부서의 전체 장부를 찾을 수 없습니다' },
           { status: 400 }
         );
       }
 
       targetLedgerId = mainLedger.id;
+      targetDepartmentId = mainLedger.department_id;
+      targetLedgerType = mainLedger.type;
     }
 
     // receipts RLS는 teacher를 제외하므로 serviceClient로 조회 (API 레벨 권한 검증 완료 후)
     const serviceClient = createServiceClient();
 
+    let ledgerIds = [targetLedgerId];
+    if (targetLedgerType === 'main') {
+      const { data: deptLedgers, error: ledgerListError } = await supabase
+        .from('ledgers')
+        .select('id')
+        .eq('department_id', targetDepartmentId)
+        .eq('is_active', true);
+
+      if (ledgerListError) {
+        return NextResponse.json({ error: `장부 목록 조회에 실패했습니다: ${ledgerListError.message}` }, { status: 500 });
+      }
+
+      ledgerIds = (deptLedgers || []).map((l) => l.id);
+    }
+
     // 이월 잔액: startDate 이전의 모든 항목 합산 (수입 - 지출)
-    const { data: priorEntries } = await serviceClient
+    let priorQuery = serviceClient
       .from('ledger_entries')
       .select('income, expense')
-      .eq('ledger_id', targetLedgerId)
       .lt('date', startDate);
+
+    priorQuery = targetLedgerType === 'main'
+      ? priorQuery.in('ledger_id', ledgerIds)
+      : priorQuery.eq('ledger_id', targetLedgerId);
+
+    const { data: priorEntries } = await priorQuery;
 
     const carryoverBalance = (priorEntries || []).reduce(
       (sum, e) => sum + (e.income || 0) - (e.expense || 0), 0
     );
 
     // 기간 내 전체 항목 조회 (수입 + 지출 모두)
-    const { data: allEntries, error } = await serviceClient
+    let entriesQuery = serviceClient
       .from('ledger_entries')
       .select('*, categories(*), receipts!receipt_id(id, image_url)')
-      .eq('ledger_id', targetLedgerId)
       .gte('date', startDate)
       .lte('date', endDate)
       .order('date', { ascending: true })
       .order('created_at', { ascending: true });
+
+    entriesQuery = targetLedgerType === 'main'
+      ? entriesQuery.in('ledger_id', ledgerIds)
+      : entriesQuery.eq('ledger_id', targetLedgerId);
+
+    const { data: allEntries, error } = await entriesQuery;
 
     if (error) {
       return NextResponse.json({ error: `데이터 조회에 실패했습니다: ${error.message}` }, { status: 500 });

@@ -172,7 +172,7 @@ export default function CategoriesPage() {
             <div
               key={cat.id}
               className={`
-                bg-white rounded-xl shadow-sm border border-gray-100 p-4
+                glass-panel rounded-xl p-4
                 hover:shadow-md transition-all duration-200 cursor-pointer
                 ${!cat.is_active ? 'opacity-60' : ''}
               `}
@@ -246,7 +246,7 @@ export default function CategoriesPage() {
     <AppShell>
       <div className="space-y-6">
         {/* 페이지 헤더 */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">

@@ -14,7 +14,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles = {
   primary:
-    'bg-gradient-to-r from-primary-600 to-primary-500 text-white hover:from-primary-700 hover:to-primary-600 focus-visible:ring-primary-500',
+    'bg-gradient-to-r from-primary-700 to-primary-500 text-white hover:from-primary-700 hover:to-primary-600 focus-visible:ring-primary-500',
   secondary:
     'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus-visible:ring-primary-500',
   danger:

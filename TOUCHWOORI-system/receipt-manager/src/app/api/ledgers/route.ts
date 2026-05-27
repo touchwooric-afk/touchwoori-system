@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     let ledgers = data || [];
 
-    // 특정 부서를 조회했는데 본 장부(main)가 없으면 자동 생성
+    // 특정 부서를 조회했는데 전체 장부(main)가 없으면 자동 생성
     // — 부서가 새로 추가될 때마다 수동으로 장부를 만들지 않아도 됨
     if (targetDept && !ledgers.some((l: { type: string }) => l.type === 'main')) {
       const serviceClient = createServiceClient();
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
         .from('ledgers')
         .insert({
           department_id: targetDept,
-          name: '전체 회기',
+          name: '전체 장부',
           type: 'main',
           is_active: true,
           created_by: authUser.id,
@@ -176,9 +176,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
-    // 본 장부(main)는 비활성화 불가
+    // 전체 장부(main)는 비활성화 불가
     if (existingLedger.type === 'main' && is_active === false) {
-      return NextResponse.json({ error: '본 장부는 비활성화할 수 없습니다' }, { status: 400 });
+      return NextResponse.json({ error: '전체 장부는 비활성화할 수 없습니다' }, { status: 400 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -245,7 +245,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
     if (ledger.type === 'main') {
-      return NextResponse.json({ error: '본 장부는 삭제할 수 없습니다' }, { status: 400 });
+      return NextResponse.json({ error: '전체 장부는 삭제할 수 없습니다' }, { status: 400 });
     }
     if (ledger.is_active) {
       return NextResponse.json({ error: '종료된 장부만 삭제할 수 있습니다' }, { status: 400 });

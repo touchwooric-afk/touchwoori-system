@@ -172,7 +172,7 @@ export default function NewReceiptPage() {
     <AppShell>
       {duplicateConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div className="glass-popover rounded-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="rounded-full bg-amber-100 p-2 shrink-0">
                 <AlertTriangle className="h-5 w-5 text-amber-600" />

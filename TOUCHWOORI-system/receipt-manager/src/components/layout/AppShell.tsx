@@ -35,7 +35,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="min-h-screen app-surface p-6">
         <PageSkeleton />
       </div>
     );
@@ -46,9 +46,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-surface">
       {/* 상단 바 */}
-      <header className="fixed top-0 left-0 right-0 z-30 h-16 bg-white border-b border-gray-200">
+      <header className="fixed top-0 left-0 right-0 z-30 h-16 glass-header border-b">
         <div className="flex items-center justify-between h-full px-4 md:px-6">
           {/* 로고 */}
           <div className="flex items-center gap-3">
@@ -61,7 +61,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <Link
               href="/"
-              className="text-lg font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+              className="text-lg font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
             >
               {user.department_id?.includes('중등부') ? 'DREAMWOORI' : 'TOUCHWOORI'}
             </Link>
@@ -107,7 +107,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="w-64 h-full bg-white pt-16 animate-slide-in-right overflow-y-auto"
+            className="w-64 h-full glass-popover pt-16 animate-slide-in-right overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <Sidebar role={user.role} mobile />
@@ -120,7 +120,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* 메인 콘텐츠 */}
       <main className="pt-16 pb-20 md:pb-6 md:pl-64">
-        <div className="max-w-5xl mx-auto px-4 py-6 md:px-6 animate-fade-in">
+        <div className="max-w-[1600px] mx-auto px-4 py-6 md:px-6 animate-fade-in">
           {children}
         </div>
       </main>

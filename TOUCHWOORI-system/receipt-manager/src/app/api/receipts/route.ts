@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!targetLedgerId) {
-        // 장부 미선택 시 본 장부(main)에 추가
+        // 장부 미선택 시 전체 장부(main)에 추가
         const { data: mainLedger } = await supabase
           .from('ledgers')
           .select('id')

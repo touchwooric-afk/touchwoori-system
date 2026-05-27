@@ -36,6 +36,7 @@ const PAGE_SIZE = 20;
 
 interface EntryRow {
   id?: string;
+  ledger_id?: string;
   date: string;
   description: string;
   amount: string;
@@ -95,6 +96,16 @@ function LedgerPageInner() {
   const [autoSuggest, setAutoSuggest] = useState(true);
   const tableRef = useRef<HTMLTableElement>(null);
   const jumpToLastPage = useRef(false);
+  const [addTargetLedgerId, setAddTargetLedgerId] = useState('');
+
+  // ─── 컬럼 너비 리사이즈 ───
+  const DEFAULT_COL_WIDTHS = {
+    checkbox: 44, date: 90, description: 360, ledger: 130,
+    income: 110, expense: 110, balance: 110, category: 130, memo: 120, action: 48,
+  } as const;
+  const [colWidths, setColWidths] = useState<Record<string, number>>({ ...DEFAULT_COL_WIDTHS });
+  const colWidthsRef = useRef<Record<string, number>>({ ...DEFAULT_COL_WIDTHS });
+  useEffect(() => { colWidthsRef.current = colWidths; }, [colWidths]);
 
   // 단축키: ⌘S / Ctrl+S → 항목 저장 (모달 열려있을 때만)
   const saveShortcut = useHotkey('s', { meta: true }, () => handleAddSubmit(), { enabled: addModalOpen });
@@ -123,6 +134,24 @@ function LedgerPageInner() {
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const isEditor = user?.role === 'accountant' || user?.role === 'master' || user?.role === 'sub_master';
+  const selectedLedger = ledgers.find(l => l.id === selectedLedgerId);
+  const isMainLedger = selectedLedger?.type === 'main';
+  const visibleColKeys = [
+    ...(isEditor ? ['checkbox'] : []),
+    'date',
+    'description',
+    ...(isMainLedger ? ['ledger'] : []),
+    'income',
+    'expense',
+    'balance',
+    'category',
+    'memo',
+    ...(isEditor ? ['action'] : []),
+  ];
+  const tableWidth = Math.max(
+    visibleColKeys.reduce((sum, key) => sum + (colWidths[key] || 0), 0),
+    1000
+  );
 
   // 엑셀 내보내기
   const [exporting, setExporting] = useState(false);
@@ -159,12 +188,14 @@ function LedgerPageInner() {
     }
   };
 
-  // Load auto-suggest preference from localStorage
+  // Load persisted preferences from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('category-auto-suggest');
-    if (stored !== null) {
-      setAutoSuggest(stored === 'true');
-    }
+    if (stored !== null) setAutoSuggest(stored === 'true');
+    try {
+      const widths = localStorage.getItem('ledger-col-widths');
+      if (widths) setColWidths(prev => ({ ...prev, ...JSON.parse(widths) }));
+    } catch {}
   }, []);
 
   const toggleAutoSuggest = () => {
@@ -264,6 +295,7 @@ function LedgerPageInner() {
     if (selectedLedgerId) {
       jumpToLastPage.current = true;
       setSelectedIds(new Set());
+      setAddTargetLedgerId('');
     }
   }, [selectedLedgerId]);
 
@@ -314,6 +346,31 @@ function LedgerPageInner() {
   // 서버가 date→description→income→expense 순으로 정확한 잔액을 계산해서 반환
   // 클라이언트 기본 정렬(date asc)은 서버와 동일하므로 재계산 불필요
   const sortedEntries = sorted;
+
+  useEffect(() => {
+    if (entries.length === 0) return;
+
+    const estimateTextWidth = (text: string) => {
+      const contentWidth = Array.from(text).reduce((sum, ch) => {
+        const code = ch.charCodeAt(0);
+        if (code >= 0xac00 && code <= 0xd7a3) return sum + 14;
+        if (code > 255) return sum + 12;
+        return sum + 7;
+      }, 0);
+      return contentWidth + 116; // cell padding + NEW/receipt status slot
+    };
+
+    const defaultDescriptionWidth: number = DEFAULT_COL_WIDTHS.description;
+    const longest = entries.reduce<number>((max, entry) => {
+      return Math.max(max, estimateTextWidth(entry.description || ''));
+    }, defaultDescriptionWidth);
+    const nextDescriptionWidth = Math.min(Math.max(longest, defaultDescriptionWidth), 780);
+
+    setColWidths((prev) => {
+      if (Math.abs((prev.description || 0) - nextDescriptionWidth) < 8) return prev;
+      return { ...prev, description: nextDescriptionWidth };
+    });
+  }, [entries]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -446,10 +503,14 @@ function LedgerPageInner() {
         };
       });
 
+      const targetId = isMainLedger && addTargetLedgerId ? addTargetLedgerId : selectedLedgerId;
+      const postBody: Record<string, unknown> = { entries: entriesPayload };
+      if (targetId !== selectedLedgerId) postBody.target_ledger_id = targetId;
+
       const res = await fetch(`/api/ledgers/${selectedLedgerId}/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: entriesPayload }),
+        body: JSON.stringify(postBody),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
@@ -474,6 +535,7 @@ function LedgerPageInner() {
     if (!isEditor) return;
     setEditEntry(entry);
     setEditForm({
+      ledger_id: entry.ledger_id,
       date: entry.date,
       description: entry.description,
       amount: (entry.income || entry.expense).toLocaleString('ko-KR'),
@@ -502,6 +564,7 @@ function LedgerPageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editEntry.id,
+          ledger_id: editForm.ledger_id || editEntry.ledger_id,
           date: editForm.date,
           description: editForm.description.trim(),
           income: cat?.type === 'income' ? amount : 0,
@@ -571,6 +634,37 @@ function LedgerPageInner() {
     }
   };
 
+  // ─── Column resize handlers ───
+  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = colWidthsRef.current[colKey] ?? 100;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(40, startW + ev.clientX - startX);
+      setColWidths(prev => ({ ...prev, [colKey]: w }));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      try { localStorage.setItem('ledger-col-widths', JSON.stringify(colWidthsRef.current)); } catch {}
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const handleResizeReset = (e: React.MouseEvent, colKey: string) => {
+    e.stopPropagation();
+    setColWidths(prev => {
+      const next = { ...prev, [colKey]: DEFAULT_COL_WIDTHS[colKey as keyof typeof DEFAULT_COL_WIDTHS] ?? 100 };
+      try { localStorage.setItem('ledger-col-widths', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   // ─── Search handler ───
   const handleSearch = () => {
     setSearchText(searchInput);
@@ -606,7 +700,7 @@ function LedgerPageInner() {
     <AppShell>
       <div className="space-y-6">
         {/* Page header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">
@@ -670,7 +764,7 @@ function LedgerPageInner() {
         </div>
 
         {/* Ledger selector + Filters */}
-        <div className="bg-white rounded-xl shadow-sm p-4 space-y-4">
+        <div className="glass-panel rounded-xl p-4 space-y-4">
           {/* Ledger dropdown */}
           <div className="flex items-center gap-3 flex-wrap">
             <label className="text-sm font-medium text-gray-700 shrink-0">장부</label>
@@ -687,7 +781,7 @@ function LedgerPageInner() {
             >
               {ledgers.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {l.name}{l.type === 'main' ? ' (본 장부)' : ''}
+                  {l.type === 'main' ? '전체 장부' : l.name}
                 </option>
               ))}
             </select>
@@ -766,7 +860,7 @@ function LedgerPageInner() {
 
         {/* 영수증 연동 현황 + 필터 */}
         {!loading && entries.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm px-5 py-3 flex flex-wrap items-center gap-3">
+          <div className="glass-panel rounded-xl px-5 py-3 flex flex-wrap items-center gap-3">
             <span className="text-sm text-gray-500 font-medium shrink-0">항목 보기</span>
             <div className="flex gap-1.5 flex-wrap flex-1">
               {([
@@ -825,13 +919,25 @@ function LedgerPageInner() {
             }
           />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="glass-panel rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="text-sm" style={{ tableLayout: 'fixed', width: `max(100%, ${tableWidth}px)` }}>
+                <colgroup>
+                  {isEditor && <col style={{ width: colWidths.checkbox }} />}
+                  <col style={{ width: colWidths.date }} />
+                  <col style={{ width: colWidths.description }} />
+                  {isMainLedger && <col style={{ width: colWidths.ledger }} />}
+                  <col style={{ width: colWidths.income }} />
+                  <col style={{ width: colWidths.expense }} />
+                  <col style={{ width: colWidths.balance }} />
+                  <col style={{ width: colWidths.category }} />
+                  <col style={{ width: colWidths.memo }} />
+                  {isEditor && <col style={{ width: colWidths.action }} />}
+                </colgroup>
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     {isEditor && (
-                      <th className="pl-4 pr-2 py-3 w-10">
+                      <th className="pl-4 pr-2 py-3 relative" style={{ width: colWidths.checkbox }}>
                         <input
                           type="checkbox"
                           checked={allSelected}
@@ -841,49 +947,70 @@ function LedgerPageInner() {
                             focus:ring-primary-500 cursor-pointer"
                           title="전체 선택"
                         />
+                        <div onMouseDown={(e) => handleResizeStart(e, 'checkbox')} onDoubleClick={(e) => handleResizeReset(e, 'checkbox')}
+                          className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                       </th>
                     )}
                     <th
-                      className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer select-none"
+                      style={{ width: colWidths.date }}
+                      className="relative px-4 py-3 text-left font-medium text-gray-600 cursor-pointer select-none"
                       onClick={() => handleSort('date')}
                     >
-                      <div className="flex items-center gap-1">
-                        날짜
-                        <SortIcon field="date" />
-                      </div>
+                      <div className="flex items-center gap-1 pr-1">날짜<SortIcon field="date" /></div>
+                      <div onMouseDown={(e) => handleResizeStart(e, 'date')} onDoubleClick={(e) => handleResizeReset(e, 'date')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">항목</th>
+                    <th style={{ width: colWidths.description }} className="relative px-4 py-3 text-left font-medium text-gray-600">
+                      항목
+                      <div onMouseDown={(e) => handleResizeStart(e, 'description')} onDoubleClick={(e) => handleResizeReset(e, 'description')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                    </th>
+                    {isMainLedger && (
+                      <th style={{ width: colWidths.ledger }} className="relative px-4 py-3 text-left font-medium text-gray-600">
+                        장부
+                        <div onMouseDown={(e) => handleResizeStart(e, 'ledger')} onDoubleClick={(e) => handleResizeReset(e, 'ledger')}
+                          className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                      </th>
+                    )}
                     <th
-                      className="px-4 py-3 text-right font-medium text-gray-600 cursor-pointer select-none"
+                      style={{ width: colWidths.income }}
+                      className="relative px-4 py-3 text-right font-medium text-gray-600 cursor-pointer select-none"
                       onClick={() => handleSort('income')}
                     >
-                      <div className="flex items-center justify-end gap-1">
-                        수입
-                        <SortIcon field="income" />
-                      </div>
+                      <div className="flex items-center justify-end gap-1 pr-1">수입<SortIcon field="income" /></div>
+                      <div onMouseDown={(e) => handleResizeStart(e, 'income')} onDoubleClick={(e) => handleResizeReset(e, 'income')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
                     <th
-                      className="px-4 py-3 text-right font-medium text-gray-600 cursor-pointer select-none"
+                      style={{ width: colWidths.expense }}
+                      className="relative px-4 py-3 text-right font-medium text-gray-600 cursor-pointer select-none"
                       onClick={() => handleSort('expense')}
                     >
-                      <div className="flex items-center justify-end gap-1">
-                        지출
-                        <SortIcon field="expense" />
-                      </div>
+                      <div className="flex items-center justify-end gap-1 pr-1">지출<SortIcon field="expense" /></div>
+                      <div onMouseDown={(e) => handleResizeStart(e, 'expense')} onDoubleClick={(e) => handleResizeReset(e, 'expense')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600">잔액</th>
+                    <th style={{ width: colWidths.balance }} className="relative px-4 py-3 text-right font-medium text-gray-600">
+                      잔액
+                      <div onMouseDown={(e) => handleResizeStart(e, 'balance')} onDoubleClick={(e) => handleResizeReset(e, 'balance')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                    </th>
                     <th
-                      className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer select-none"
+                      style={{ width: colWidths.category }}
+                      className="relative px-4 py-3 text-left font-medium text-gray-600 cursor-pointer select-none"
                       onClick={() => handleSort('category')}
                     >
-                      <div className="flex items-center gap-1">
-                        카테고리
-                        <SortIcon field="category" />
-                      </div>
+                      <div className="flex items-center gap-1 pr-1">카테고리<SortIcon field="category" /></div>
+                      <div onMouseDown={(e) => handleResizeStart(e, 'category')} onDoubleClick={(e) => handleResizeReset(e, 'category')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">비고</th>
+                    <th style={{ width: colWidths.memo }} className="relative px-4 py-3 text-left font-medium text-gray-600">
+                      비고
+                      <div onMouseDown={(e) => handleResizeStart(e, 'memo')} onDoubleClick={(e) => handleResizeReset(e, 'memo')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                    </th>
                     {isEditor && (
-                      <th className="px-4 py-3 text-center font-medium text-gray-600 w-12"></th>
+                      <th style={{ width: colWidths.action }} className="px-4 py-3 text-center font-medium text-gray-600"></th>
                     )}
                   </tr>
                 </thead>
@@ -919,35 +1046,52 @@ function LedgerPageInner() {
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap tabular-nums">
                         {formatDateShort(entry.date)}
                       </td>
-                      <td className="px-4 py-3 text-gray-900 max-w-[220px]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate">{entry.description}</span>
-                          {isNew && (
-                            <span className="shrink-0 inline-flex items-center text-[10px] font-bold
-                              px-1.5 py-0.5 rounded-full bg-amber-400 text-white">
-                              NEW
-                            </span>
-                          )}
-                          {entry.receipt_id ? (
-                            <ReceiptPreviewBadge
-                              receiptId={entry.receipt_id}
-                              imageUrl={(entry as any).receipts?.image_url || null}
-                              onOpenModal={(imageUrl) =>
-                                setReceiptImageModal({ open: true, imageUrl, receiptId: entry.receipt_id! })
-                              }
-                              onHoverPreview={setHoverPreviewUrl}
-                            />
-                          ) : (
-                            // 지출 항목만 미연동 표시 (수입은 영수증 불필요)
-                            entry.expense > 0 && (
-                              <span className="shrink-0 inline-flex items-center text-[10px]
-                                px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200">
-                                미제출
+                      <td className="px-4 py-3 text-gray-900 overflow-hidden">
+                        <div className="grid grid-cols-[minmax(0,1fr)_64px] items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{entry.description}</span>
+                            {isNew && (
+                              <span className="shrink-0 inline-flex items-center text-[10px] font-bold
+                                px-1.5 py-0.5 rounded-full bg-amber-400 text-white">
+                                NEW
                               </span>
-                            )
-                          )}
+                            )}
+                          </div>
+                          <div className="flex justify-center">
+                            {entry.receipt_id ? (
+                              <ReceiptPreviewBadge
+                                receiptId={entry.receipt_id}
+                                imageUrl={(entry as any).receipts?.image_url || null}
+                                onOpenModal={(imageUrl) =>
+                                  setReceiptImageModal({ open: true, imageUrl, receiptId: entry.receipt_id! })
+                                }
+                                onHoverPreview={setHoverPreviewUrl}
+                              />
+                            ) : (
+                              // 지출 항목만 미연동 표시 (수입은 영수증 불필요)
+                              entry.expense > 0 && (
+                                <span className="inline-flex w-14 justify-center items-center text-[10px]
+                                  px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200">
+                                  미제출
+                                </span>
+                              )
+                            )}
+                          </div>
                         </div>
                       </td>
+                      {isMainLedger && (
+                        <td className="px-4 py-3">
+                          {entry.ledger_name && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                              entry.ledger_id === selectedLedgerId
+                                ? 'bg-gray-100 text-gray-500'
+                                : 'bg-violet-50 text-violet-700 border border-violet-200'
+                            }`}>
+                              {entry.ledger_name}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
                         {entry.income > 0 ? (
                           <span className="text-emerald-600 font-medium">
@@ -969,7 +1113,7 @@ function LedgerPageInner() {
                       <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums font-bold text-gray-900">
                         {formatCurrency(entry.balance)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 overflow-hidden">
                         {entry.category && (
                           <button
                             onClick={(e) => {
@@ -978,7 +1122,7 @@ function LedgerPageInner() {
                               setPage(1);
                             }}
                             title={filterCategory === entry.category_id ? '필터 해제' : '이 카테고리로 필터'}
-                            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
+                            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors max-w-full ${
                               filterCategory === entry.category_id
                                 ? 'ring-2 ring-offset-1 bg-gray-200 text-gray-900'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -988,12 +1132,12 @@ function LedgerPageInner() {
                               className="w-2 h-2 rounded-full shrink-0"
                               style={{ backgroundColor: entry.category.color || '#6366f1' }}
                             />
-                            {entry.category.name}
+                            <span className="truncate">{entry.category.name}</span>
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">
-                        {entry.memo || ''}
+                      <td className="px-4 py-3 text-gray-500 text-xs overflow-hidden">
+                        <span className="truncate block">{entry.memo || ''}</span>
                       </td>
                       {isEditor && (
                         <td className="px-4 py-3 text-center">
@@ -1034,6 +1178,24 @@ function LedgerPageInner() {
         preventClose={hasUnsavedChanges}
       >
         <div className="space-y-4">
+          {/* 전체 장부: 저장할 실제 장부 선택 */}
+          {isMainLedger && (
+            <div className="flex items-center gap-3 rounded-lg bg-violet-50 border border-violet-200 px-4 py-2.5">
+              <span className="text-sm font-medium text-violet-700 shrink-0">저장할 장부</span>
+              <select
+                value={addTargetLedgerId || selectedLedgerId}
+                onChange={(e) => setAddTargetLedgerId(e.target.value)}
+                className="flex-1 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm
+                  focus:ring-2 focus:ring-violet-400 focus:border-violet-400 outline-none"
+              >
+                {ledgers.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.type === 'main' ? '전체 장부' : l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Auto-suggest toggle */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">
@@ -1207,6 +1369,22 @@ function LedgerPageInner() {
             </div>
           )}
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이동할 장부 *</label>
+            <select
+              value={editForm.ledger_id || editEntry?.ledger_id || ''}
+              onChange={(e) => setEditForm({ ...editForm, ledger_id: e.target.value })}
+              required
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-shadow"
+            >
+              {ledgers.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.type === 'main' ? '전체 장부' : l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">날짜 *</label>
             <input
               type="date"
@@ -1302,7 +1480,7 @@ function LedgerPageInner() {
               취소
             </Button>
             <Button type="submit" loading={submitting} shortcut="↵">
-              수정하기
+              수정/이동 저장
             </Button>
           </div>
         </form>
@@ -1335,7 +1513,7 @@ function LedgerPageInner() {
       {/* ─── 영수증 hover 미리보기 ─── */}
       {hoverPreviewUrl && (
         <div className="fixed top-1/2 right-4 md:right-10 -translate-y-1/2 z-50 pointer-events-none
-                        w-52 md:w-72 bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
+                        w-52 md:w-72 glass-popover rounded-2xl overflow-hidden">
           <img
             src={hoverPreviewUrl}
             loading="lazy"
@@ -1411,7 +1589,7 @@ function ReceiptPreviewBadge({
         if (imageUrl) onOpenModal(imageUrl);
       }}
       className="inline-flex items-center gap-0.5 text-[10px] font-medium
-        px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700
+        w-14 justify-center px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700
         border border-emerald-200 hover:bg-emerald-100 transition-colors shrink-0"
     >
       <Paperclip className="h-2.5 w-2.5" />

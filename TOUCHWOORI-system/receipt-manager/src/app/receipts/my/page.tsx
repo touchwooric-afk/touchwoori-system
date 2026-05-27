@@ -195,7 +195,7 @@ export default function MyReceiptsPage() {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-xl shadow-sm p-4 animate-pulse">
+              <div key={i} className="glass-panel rounded-xl p-4 animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-1/3 mb-2" />
                 <div className="h-3 bg-gray-200 rounded w-2/3 mb-2" />
                 <div className="h-3 bg-gray-200 rounded w-1/4" />
@@ -215,7 +215,7 @@ export default function MyReceiptsPage() {
             {receipts.map(receipt => (
               <div
                 key={receipt.id}
-                className={`bg-white rounded-xl shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow active:bg-gray-50 flex items-start gap-3 ${
+                className={`glass-panel rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow active:bg-gray-50 flex items-start gap-3 ${
                   selectedIds.has(receipt.id) ? 'ring-2 ring-primary-400' : ''
                 }`}
                 onClick={() => router.push(`/receipts/${receipt.id}`)}
@@ -310,7 +310,7 @@ export default function MyReceiptsPage() {
       {/* 이미지 미리보기 팝업 */}
       {previewUrl && (
         <div className="fixed top-1/2 right-4 md:right-10 -translate-y-1/2 z-50 pointer-events-none
-                        w-52 md:w-72 bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
+                        w-52 md:w-72 glass-popover rounded-2xl overflow-hidden border border-gray-200">
           <img
             src={previewUrl}
             loading="lazy"

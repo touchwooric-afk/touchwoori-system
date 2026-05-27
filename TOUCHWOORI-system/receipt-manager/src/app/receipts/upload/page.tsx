@@ -25,6 +25,9 @@ interface Candidate {
   date: string;
   description: string;
   amount: number;
+  ledger_id: string;
+  ledger_name?: string | null;
+  category_id: string | null;
   category: { name: string; type: string } | null;
   confidence: 'auto' | 'high' | 'low';
 }
@@ -62,7 +65,7 @@ const parseAmountInput = (v: string) => parseInt(v.replace(/[^0-9]/g, ''), 10) |
 const confidenceLabel: Record<Candidate['confidence'], string> = {
   auto: '자동매칭',
   high: '높은일치',
-  low:  '금액일치',
+  low:  '후보',
 };
 const confidenceColor: Record<Candidate['confidence'], string> = {
   auto: 'text-emerald-600 bg-emerald-50',
@@ -87,11 +90,13 @@ export default function ReceiptUploadPage() {
   // 계좌 정보 (일괄 적용)
   const [bankInfo, setBankInfo] = useState({ bank_name: '', account_holder: '', account_number: '' });
   const [favorites, setFavorites] = useState<AccountFavorite[]>([]);
+  const [defaultFavoriteId, setDefaultFavoriteId] = useState('');
   const [favLabelInput, setFavLabelInput] = useState('');
   const [showFavInput, setShowFavInput] = useState(false);
   const [savingFav, setSavingFav] = useState(false);
   const [showFavDropdown, setShowFavDropdown] = useState(false);
   const favDropdownRef = useRef<HTMLDivElement>(null);
+  const autoFilledAccountRef = useRef(false);
   const [bankError, setBankError] = useState(false);
   const bankSectionRef = useRef<HTMLDivElement>(null);
 
@@ -103,6 +108,7 @@ export default function ReceiptUploadPage() {
 
   const isEditor = user?.role === 'accountant' || user?.role === 'master';
   const isTeacher = user?.role === 'teacher';
+  const defaultFavoriteStorageKey = user ? `account-default-favorite:${user.id}` : '';
 
   useEffect(() => {
     if (user && !isEditor && !isTeacher) router.replace('/');
@@ -164,6 +170,32 @@ export default function ReceiptUploadPage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!defaultFavoriteStorageKey) return;
+    setDefaultFavoriteId(localStorage.getItem(defaultFavoriteStorageKey) || '');
+  }, [defaultFavoriteStorageKey]);
+
+  const applyFavorite = useCallback((favorite: AccountFavorite) => {
+    setBankInfo({
+      bank_name: favorite.bank_name,
+      account_holder: favorite.account_holder,
+      account_number: favorite.account_number,
+    });
+    setBankError(false);
+  }, []);
+
+  useEffect(() => {
+    if (autoFilledAccountRef.current || favorites.length === 0) return;
+    if (bankInfo.bank_name || bankInfo.account_holder || bankInfo.account_number) return;
+
+    const defaultFavorite = favorites.find((f) => f.id === defaultFavoriteId);
+    const autoFavorite = defaultFavorite || (favorites.length === 1 ? favorites[0] : null);
+    if (!autoFavorite) return;
+
+    applyFavorite(autoFavorite);
+    autoFilledAccountRef.current = true;
+  }, [favorites, defaultFavoriteId, bankInfo.bank_name, bankInfo.account_holder, bankInfo.account_number, applyFavorite]);
+
   const handleSaveFav = async () => {
     if (!favLabelInput.trim() || !bankInfo.bank_name || !bankInfo.account_holder || !bankInfo.account_number) {
       toast.error('계좌 정보와 즐겨찾기 이름을 모두 입력해주세요');
@@ -193,6 +225,21 @@ export default function ReceiptUploadPage() {
   const handleDeleteFav = async (id: string) => {
     await fetch(`/api/account-favorites?id=${id}`, { method: 'DELETE' });
     setFavorites(prev => prev.filter(f => f.id !== id));
+    if (id === defaultFavoriteId && defaultFavoriteStorageKey) {
+      localStorage.removeItem(defaultFavoriteStorageKey);
+      setDefaultFavoriteId('');
+      autoFilledAccountRef.current = false;
+    }
+  };
+
+  const handleSetDefaultFav = async (favorite: AccountFavorite) => {
+    if (defaultFavoriteStorageKey) {
+      localStorage.setItem(defaultFavoriteStorageKey, favorite.id);
+    }
+    setDefaultFavoriteId(favorite.id);
+    applyFavorite(favorite);
+    setShowFavDropdown(false);
+    toast.success('대표 계좌로 설정되었습니다');
   };
 
   // ── 후보 조회 ──────────────────────────────────────────────────
@@ -202,12 +249,16 @@ export default function ReceiptUploadPage() {
     description: string,
     amount: string,
     date?: string,
+    manual = false,
+    month?: string,
   ) => {
     const params = new URLSearchParams({ ledgerId });
     const num = parseAmountInput(amount);
     if (num) params.set('amount', String(num));
     if (description.trim()) params.set('description', description.trim());
     if (date) params.set('date', date);
+    if (month) params.set('month', month);
+    if (manual) params.set('manual', 'true');
 
     try {
       const res = await fetch(`/api/receipts/candidates?${params}`);
@@ -217,14 +268,19 @@ export default function ReceiptUploadPage() {
 
       setRows((prev) => prev.map((r) => {
         if (r.localId !== localId) return r;
+        const selectedCandidateId = manual
+          ? (candidates.length === 1 ? candidates[0].id : candidates.some((c) => c.id === r.selectedCandidateId) ? r.selectedCandidateId : null)
+          : (autoMatch ? autoMatch.id : null);
+        const selectedCandidate = candidates.find((c) => c.id === selectedCandidateId) || null;
         const patch: Partial<ReceiptRow> = {
           candidates,
-          selectedCandidateId: autoMatch ? autoMatch.id : null,
-          matchMode: autoMatch ? 'link' : 'new',
+          selectedCandidateId,
+          matchMode: manual ? 'link' : (autoMatch ? 'link' : 'new'),
         };
-        // 자동매칭 시 후보 항목의 날짜로 덮어쓰기
-        if (autoMatch) {
-          patch.date = autoMatch.date;
+        // 기존 장부 항목과 연결되면 장부에 저장된 날짜/카테고리를 최우선으로 반영합니다.
+        if (selectedCandidate) {
+          patch.date = selectedCandidate.date;
+          if (selectedCandidate.category_id) patch.categoryId = selectedCandidate.category_id;
         }
         return { ...r, ...patch };
       }));
@@ -325,6 +381,11 @@ export default function ReceiptUploadPage() {
     updateRow(row.localId, { saveStatus: 'saving' });
 
     try {
+      const linkedCandidate = row.matchMode === 'link' && row.selectedCandidateId
+        ? row.candidates.find((c) => c.id === row.selectedCandidateId)
+        : null;
+      const receiptLedgerId = (isTeacher ? teacherLedgerId : linkedCandidate?.ledger_id || selectedLedgerId) || null;
+
       // 이미지 → Supabase Storage 업로드 (실패 시 저장 중단)
       let imageUrl: string | null = null;
       if (row.file) {
@@ -359,7 +420,7 @@ export default function ReceiptUploadPage() {
           image_url: imageUrl,
           skip_auto_ledger: row.matchMode === 'link',
           skip_duplicate_check: row.matchMode === 'link' || forceSubmit,
-          ledger_id: (isTeacher ? teacherLedgerId : selectedLedgerId) || null,
+          ledger_id: receiptLedgerId,
           bank_name: bankInfo.bank_name || null,
           account_holder: bankInfo.account_holder || null,
           account_number: bankInfo.account_number || null,
@@ -377,7 +438,7 @@ export default function ReceiptUploadPage() {
 
       // 기존 장부 항목에 receipt_id 연결
       if (row.matchMode === 'link' && row.selectedCandidateId) {
-        const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
+        const ledgerIdToUse = isTeacher ? teacherLedgerId : linkedCandidate?.ledger_id || selectedLedgerId;
         const patchRes = await fetch(`/api/ledgers/${ledgerIdToUse}/entries`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -463,7 +524,7 @@ export default function ReceiptUploadPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">
@@ -481,30 +542,30 @@ export default function ReceiptUploadPage() {
 
         {/* 파일명 형식 안내 */}
         <div className="space-y-3">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700">
+          <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-blue-700">
             <p>파일명에 날짜, 금액, 항목이 포함되어 있으면 자동으로 인식하고 입력합니다.</p>
             <p className="text-xs text-blue-600 mt-2">촬영 후 파일명을 편집하실 수 있다면 미리 정리해두면 더 편하게 업로드하실 수 있습니다.</p>
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700 space-y-1.5">
+          <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-blue-700 space-y-1.5">
             <p className="font-semibold">파일명 필수 포함 항목: 날짜 · 항목명 · 금액</p>
             <p className="text-xs text-blue-600">예) 26년 4월 3일 70000원 교제비 &nbsp;/&nbsp; 260403 70000 교제비 &nbsp;/&nbsp; 0403-70000-교제비</p>
           </div>
         </div>
 
         {/* 계좌 입력 안내 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700">
+        <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-blue-700">
           회계 선생님이 송금하실 때 불편함 없도록 <span className="font-semibold">계좌번호, 성함, 은행명</span>을 정확하게 입력해주세요.
         </div>
 
         {/* 안내 배너 (teacher) */}
         {isTeacher && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-sm text-amber-700">
+          <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-amber-700">
             저장 시 <span className="font-semibold">승인 대기</span> 상태로 등록됩니다. 장부 항목이 있으면 연결하고, 없으면 회계 담당자가 승인 시 추가합니다.
           </div>
         )}
 
         {/* 계좌 정보 (송금 안내) */}
-        <div ref={bankSectionRef} className={`rounded-xl shadow-sm p-5 space-y-4 ${bankError ? 'bg-red-50 ring-2 ring-red-400' : 'bg-white'}`}>
+        <div ref={bankSectionRef} className={`rounded-xl p-5 space-y-4 ${bankError ? 'bg-red-50/85 ring-2 ring-red-400' : 'glass-panel'}`}>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">계좌 정보 <span className="text-xs font-normal text-gray-400">(회계 담당자에게 전달됩니다)</span></h2>
             {bankError && <span className="text-xs font-semibold text-red-600">⚠ 필수 정보입니다</span>}
@@ -550,29 +611,51 @@ export default function ReceiptUploadPage() {
               <Star className="h-3.5 w-3.5" /> 즐겨찾기
             </button>
             {showFavDropdown && (
-              <div className="absolute left-0 top-6 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-64 py-2">
+              <div className="absolute left-0 top-6 z-20 glass-popover rounded-xl w-64 py-2">
                 {favorites.length === 0 && !showFavInput && (
                   <p className="text-xs text-gray-400 px-3 py-2">저장된 즐겨찾기가 없습니다</p>
+                )}
+                {favorites.length > 1 && !favorites.some(f => f.id === defaultFavoriteId) && !showFavInput && (
+                  <p className="mx-3 mb-1 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+                    대표 계좌를 선택하면 다음 제출부터 자동 입력됩니다.
+                  </p>
                 )}
                 {favorites.map(f => (
                   <div
                     key={f.id}
-                    className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer group"
+                    className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer group"
                     onClick={() => {
-                      setBankInfo({ bank_name: f.bank_name, account_holder: f.account_holder, account_number: f.account_number });
+                      applyFavorite(f);
                       setShowFavDropdown(false);
                     }}
                   >
-                    <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                      <Star className="h-3 w-3 text-amber-400 fill-amber-400 shrink-0" />
-                      {f.label}
+                    <span className="min-w-0 text-sm text-gray-700 flex items-center gap-1.5">
+                      <Star className={`h-3 w-3 shrink-0 ${f.id === defaultFavoriteId ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}`} />
+                      <span className="truncate">{f.label}</span>
+                      {f.id === defaultFavoriteId && (
+                        <span className="shrink-0 rounded-full bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold text-primary-700">
+                          대표
+                        </span>
+                      )}
                     </span>
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDeleteFav(f.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 ml-2"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {f.id !== defaultFavoriteId && (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleSetDefaultFav(f); }}
+                          className="rounded-md px-1.5 py-1 text-[10px] font-semibold text-gray-500 hover:bg-primary-50 hover:text-primary-700"
+                          title="대표 계좌로 설정"
+                        >
+                          대표
+                        </button>
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDeleteFav(f.id); }}
+                        className="text-gray-400 hover:text-red-500"
+                        title="삭제"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {favorites.length > 0 && <div className="border-t border-gray-100 my-1" />}
@@ -617,7 +700,7 @@ export default function ReceiptUploadPage() {
         </div>
 
         {/* 장부 선택 + 파일 선택 */}
-        <div className="bg-white rounded-xl shadow-sm p-5 flex flex-wrap items-end gap-4">
+        <div className="glass-panel rounded-xl p-5 flex flex-wrap items-end gap-4">
           {!isTeacher && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">대상 장부</label>
@@ -650,7 +733,7 @@ export default function ReceiptUploadPage() {
         {/* 드래그 앤 드롭 */}
         {rows.length === 0 && (
           <div
-            className="border-2 border-dashed border-gray-300 rounded-xl p-16 text-center
+            className="glass-panel-soft border-2 border-dashed border-white/70 rounded-xl p-16 text-center
               hover:border-primary-400 transition-colors cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -664,7 +747,7 @@ export default function ReceiptUploadPage() {
 
         {/* 테이블 */}
         {rows.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="glass-panel rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
               <span>총 {rows.length}건</span>
               {savedCount  > 0 && <span className="text-emerald-600">✓ 저장 {savedCount}건</span>}
@@ -683,7 +766,7 @@ export default function ReceiptUploadPage() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 text-left">
                     <th className="px-3 py-2 w-20">미리보기</th>
-                    <th className="px-3 py-2">파일명</th>
+                    <th className="px-3 py-2 min-w-[260px]">파일명</th>
                     <th className="px-3 py-2 w-36">날짜</th>
                     <th className="px-3 py-2 w-32 text-right">금액</th>
                     <th className="px-3 py-2 w-36">카테고리</th>
@@ -705,6 +788,11 @@ export default function ReceiptUploadPage() {
                         const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
                         if (ledgerIdToUse) fetchCandidates(row.localId, ledgerIdToUse, desc, amount, row.date);
                         checkSimilarReceipt(row.localId, amount, ledgerIdToUse || undefined);
+                      }}
+                      onManualSearch={(query, month) => {
+                        const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
+                        if (!ledgerIdToUse) return Promise.resolve();
+                        return fetchCandidates(row.localId, ledgerIdToUse, query, row.amount, row.date, true, month);
                       }}
                       onPreview={() => setPreviewModal({ open: true, url: row.previewUrl, name: row.file.name })}
                       onRemove={() => removeRow(row.localId)}
@@ -742,7 +830,7 @@ export default function ReceiptUploadPage() {
       {/* 중복 영수증 차단 안내 */}
       {duplicateQueue && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div className="glass-popover rounded-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="rounded-full bg-rose-100 p-2 shrink-0">
                 <AlertCircle className="h-5 w-5 text-rose-600" />
@@ -797,7 +885,7 @@ export default function ReceiptUploadPage() {
       {/* 하단 고정 저장 바 */}
       {rows.length > 0 && (
         <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center z-20 pointer-events-none px-4">
-          <div className="pointer-events-auto bg-white rounded-2xl shadow-xl border border-gray-200 px-5 py-3 flex items-center gap-4">
+          <div className="pointer-events-auto glass-popover rounded-2xl px-5 py-3 flex items-center gap-4">
             <div className="text-sm text-gray-600">
               <span className="font-semibold text-gray-900">{rows.length}개</span> 파일
               {savedCount > 0 && <span className="ml-2 text-emerald-600">✓ {savedCount}건 저장됨</span>}
@@ -821,15 +909,45 @@ interface RowProps {
   isTeacher: boolean;
   onUpdate: (patch: Partial<ReceiptRow>) => void;
   onRefreshCandidates: (description: string, amount: string) => void;
+  onManualSearch: (query: string, month?: string) => Promise<void>;
   onPreview: () => void;
   onRemove: () => void;
   onSave: () => Promise<boolean>;
 }
 
-function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandidates, onPreview, onRemove, onSave }: RowProps) {
+function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandidates, onManualSearch, onPreview, onRemove, onSave }: RowProps) {
   const isSaved  = row.saveStatus === 'saved';
   const isSaving = row.saveStatus === 'saving';
   const isError  = row.saveStatus === 'error';
+  const [manualQuery, setManualQuery] = useState('');
+  const [manualMonth, setManualMonth] = useState(row.date ? row.date.slice(0, 7) : '');
+  const [manualSearching, setManualSearching] = useState(false);
+
+  useEffect(() => {
+    if (row.date) setManualMonth(row.date.slice(0, 7));
+  }, [row.date]);
+
+  const applyCandidate = (candidateId: string | null) => {
+    const cand = row.candidates.find((c) => c.id === candidateId);
+    onUpdate({
+      selectedCandidateId: candidateId,
+      ...(cand ? {
+        date: cand.date,
+        categoryId: cand.category_id || row.categoryId,
+        saveStatus: 'idle' as const,
+        errorMsg: undefined,
+      } : {}),
+    });
+  };
+
+  const handleManualSearch = async (showWholeMonth = false) => {
+    setManualSearching(true);
+    try {
+      await onManualSearch(showWholeMonth ? '' : manualQuery.trim(), manualMonth || undefined);
+    } finally {
+      setManualSearching(false);
+    }
+  };
 
   return (
     <>
@@ -862,8 +980,8 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
       </td>
 
       {/* 파일명 */}
-      <td className="px-3 py-2">
-        <p className="text-xs text-gray-500 truncate max-w-[100px]" title={row.file.name}>{row.file.name}</p>
+      <td className="px-3 py-2 min-w-[260px] max-w-[420px] align-top">
+        <p className="text-xs leading-relaxed text-gray-500 break-all" title={row.file.name}>{row.file.name}</p>
       </td>
 
       {/* 날짜 */}
@@ -932,25 +1050,32 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
         {isSaved ? (
           <span className="text-xs text-emerald-600">저장됨</span>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 rounded-lg border border-primary-100 bg-primary-50/35 p-2">
             {/* 모드 토글 */}
             <div className="flex gap-1">
               <button
-                onClick={() => onUpdate({ matchMode: 'link', selectedCandidateId: row.candidates[0]?.id ?? null })}
-                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                onClick={() => {
+                  const first = row.candidates[0] ?? null;
+                  onUpdate({
+                    matchMode: 'link',
+                    selectedCandidateId: first?.id ?? null,
+                    ...(first ? { date: first.date, categoryId: first.category_id || row.categoryId } : {}),
+                  });
+                }}
+                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border font-semibold transition-colors ${
                   row.matchMode === 'link'
-                    ? 'bg-primary-50 border-primary-400 text-primary-700'
-                    : 'border-gray-300 text-gray-400 hover:border-gray-400'
+                    ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                    : 'bg-white/70 border-primary-200 text-primary-600 hover:border-primary-400 hover:bg-primary-50'
                 }`}
               >
                 <Link className="h-2.5 w-2.5" />기존 연결
               </button>
               <button
                 onClick={() => onUpdate({ matchMode: 'new', selectedCandidateId: null })}
-                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border font-semibold transition-colors ${
                   row.matchMode === 'new'
-                    ? 'bg-primary-50 border-primary-400 text-primary-700'
-                    : 'border-gray-300 text-gray-400 hover:border-gray-400'
+                    ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                    : 'bg-white/70 border-primary-200 text-primary-600 hover:border-primary-400 hover:bg-primary-50'
                 }`}
               >
                 <FilePlus className="h-2.5 w-2.5" />새 항목
@@ -959,37 +1084,82 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
 
             {/* 후보 드롭다운 */}
             {row.matchMode === 'link' && (
-              row.candidates.length > 0 ? (
-                <div className="space-y-0.5">
-                  <select
-                    value={row.selectedCandidateId || ''}
-                    onChange={(e) => {
-                      const candidateId = e.target.value || null;
-                      const cand = row.candidates.find((c) => c.id === candidateId);
-                      onUpdate({ selectedCandidateId: candidateId, ...(cand ? { date: cand.date } : {}) });
+              <div className="space-y-1 rounded-lg border border-primary-100 bg-white/65 p-1.5">
+                {row.candidates.length > 0 ? (
+                  <div className="space-y-0.5">
+                    <select
+                      value={row.selectedCandidateId || ''}
+                      onChange={(e) => {
+                        const candidateId = e.target.value || null;
+                        applyCandidate(candidateId);
+                      }}
+                      className="w-full rounded border border-primary-200 bg-white px-1.5 py-1 text-[10px]
+                        focus:ring-1 focus:ring-primary-500 outline-none"
+                    >
+                      <option value="">-- 선택 --</option>
+                      {row.candidates.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.date} · {c.ledger_name ? `${c.ledger_name} · ` : ''}{c.description} · {formatCurrency(c.amount)}
+                        </option>
+                      ))}
+                    </select>
+                    {row.selectedCandidateId && (() => {
+                      const cand = row.candidates.find((c) => c.id === row.selectedCandidateId);
+                      return cand ? (
+                        <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${confidenceColor[cand.confidence]}`}>
+                          {confidenceLabel[cand.confidence]}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-primary-500">후보 없음 · 아래 검색 버튼을 누르면 해당 월 항목을 함께 보여줍니다</p>
+                )}
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={manualQuery}
+                    onChange={(e) => setManualQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleManualSearch(false);
+                      }
                     }}
-                    className="w-full rounded border border-gray-300 px-1.5 py-1 text-[10px]
+                    placeholder="항목명 검색"
+                    className="min-w-0 flex-1 rounded border border-primary-200 bg-primary-50/50 px-1.5 py-1 text-[10px]
                       focus:ring-1 focus:ring-primary-500 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleManualSearch(false)}
+                    disabled={manualSearching}
+                    className="shrink-0 rounded border border-primary-300 bg-primary-50 px-2 py-1 text-[10px] font-semibold text-primary-700
+                      hover:border-primary-500 hover:bg-primary-100 disabled:opacity-50"
                   >
-                    <option value="">-- 선택 --</option>
-                    {row.candidates.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.date} · {c.description} · {formatCurrency(c.amount)}
-                      </option>
-                    ))}
-                  </select>
-                  {row.selectedCandidateId && (() => {
-                    const cand = row.candidates.find((c) => c.id === row.selectedCandidateId);
-                    return cand ? (
-                      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${confidenceColor[cand.confidence]}`}>
-                        {confidenceLabel[cand.confidence]}
-                      </span>
-                    ) : null;
-                  })()}
+                    {manualSearching ? '검색중' : '검색'}
+                  </button>
                 </div>
-              ) : (
-                <p className="text-[10px] text-gray-400">매칭 후보 없음 — 새 항목으로 저장됩니다</p>
-              )
+                <div className="flex gap-1">
+                  <input
+                    type="month"
+                    value={manualMonth}
+                    onChange={(e) => setManualMonth(e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-primary-200 bg-white px-1.5 py-1 text-[10px]
+                      focus:ring-1 focus:ring-primary-500 outline-none"
+                    aria-label="월별 후보 조회 월"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleManualSearch(true)}
+                    disabled={manualSearching || !manualMonth}
+                    className="shrink-0 rounded border border-primary-300 bg-primary-100 px-2 py-1 text-[10px] font-semibold text-primary-700
+                      hover:border-primary-500 hover:bg-primary-200 disabled:opacity-50"
+                  >
+                    월 전체보기
+                  </button>
+                </div>
+              </div>
             )}
             {row.matchMode === 'new' && (
               <p className="text-[10px] text-gray-400">장부에 새 항목으로 추가됩니다</p>

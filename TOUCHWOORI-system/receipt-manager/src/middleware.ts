@@ -24,6 +24,12 @@ const ACCOUNTANT_PATHS = [
   '/excel',
 ];
 
+// 출석 명단 관리: 운영 담당자만 가능
+const ATTENDANCE_MANAGE_PATHS = ['/attendance/roster'];
+
+// 출석 체크: 활성 교사 및 운영 담당자 가능
+const ATTENDANCE_CHECK_PATHS = ['/attendance'];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -132,6 +138,16 @@ export async function middleware(request: NextRequest) {
   // accountant 이상 전용 경로 (sub_master/auditor/overseer/admin_viewer 차단)
   if (ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     if (role !== 'master' && role !== 'accountant') {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+  }
+
+  if (ATTENDANCE_MANAGE_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    if (role !== 'master' && role !== 'sub_master' && role !== 'accountant') {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+  } else if (ATTENDANCE_CHECK_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    if (role !== 'master' && role !== 'sub_master' && role !== 'accountant' && role !== 'teacher') {
       return NextResponse.redirect(new URL('/', request.url));
     }
   }

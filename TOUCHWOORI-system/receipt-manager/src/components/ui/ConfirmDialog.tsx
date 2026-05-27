@@ -28,11 +28,11 @@ export default function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/36 p-4 backdrop-blur-[2px]">
       <div
         role="dialog"
         aria-labelledby="confirm-title"
-        className="w-full max-w-sm bg-white rounded-2xl shadow-2xl animate-scale-up p-6"
+        className="w-full max-w-sm glass-popover rounded-2xl animate-scale-up p-6"
       >
         <h3 id="confirm-title" className="text-lg font-semibold text-gray-900">
           {title}

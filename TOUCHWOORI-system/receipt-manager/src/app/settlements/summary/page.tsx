@@ -62,7 +62,7 @@ export default function SettlementSummaryPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2.5">
               <BarChart3 className="h-6 w-6" />
@@ -75,7 +75,7 @@ export default function SettlementSummaryPage() {
         </div>
 
         {/* Date range */}
-        <div className="bg-white rounded-xl shadow-sm p-5">
+        <div className="glass-panel rounded-xl p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <DatePicker label="시작일" value={startDate} onChange={setStartDate} required />
             <DatePicker label="종료일" value={endDate} onChange={setEndDate} required />
@@ -98,7 +98,7 @@ export default function SettlementSummaryPage() {
             ) : (
               <>
                 {/* Summary table */}
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="glass-panel rounded-xl overflow-hidden">
                   <div className="p-4 border-b border-gray-200">
                     <h2 className="text-base font-semibold text-gray-900">
                       {formatDateShort(data.period.startDate)} ~{' '}
@@ -141,7 +141,7 @@ export default function SettlementSummaryPage() {
                 </div>
 
                 {/* Bar chart */}
-                <div className="bg-white rounded-xl shadow-sm p-5">
+                <div className="glass-panel rounded-xl p-5">
                   <h2 className="text-base font-semibold text-gray-900 mb-4">
                     카테고리별 지출 비교
                   </h2>
