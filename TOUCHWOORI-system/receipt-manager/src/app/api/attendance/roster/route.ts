@@ -67,6 +67,32 @@ async function validateHomeroomTeacher(
   if (!data) throw new Error('선택한 담임선생님을 찾을 수 없습니다');
 }
 
+async function attachHomeroomTeachers(
+  serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>,
+  members: Record<string, unknown>[]
+) {
+  const teacherIds = [...new Set(
+    members.map((member) => member.homeroom_teacher_id)
+      .filter((id): id is string => typeof id === 'string')
+  )];
+  if (!teacherIds.length) {
+    return members.map((member) => ({ ...member, homeroom_teacher: null }));
+  }
+
+  const { data: teachers, error } = await serviceClient
+    .from('attendance_members')
+    .select('id, name')
+    .in('id', teacherIds);
+  if (error) throw new Error(error.message);
+  const teacherMap = new Map((teachers || []).map((teacher) => [teacher.id, teacher]));
+  return members.map((member) => ({
+    ...member,
+    homeroom_teacher: typeof member.homeroom_teacher_id === 'string'
+      ? teacherMap.get(member.homeroom_teacher_id) || null
+      : null,
+  }));
+}
+
 async function syncLongAbsentRecords(
   serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>,
   departmentId: string,
@@ -103,7 +129,7 @@ export async function GET(request: NextRequest) {
   const includeInactive = searchParams.get('include_inactive') === 'true';
   let query = access.serviceClient
     .from('attendance_members')
-    .select('*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name)')
+    .select('*')
     .eq('department_id', access.departmentId)
     .order('member_type', { ascending: true })
     .order('grade', { ascending: true })
@@ -115,7 +141,8 @@ export async function GET(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: `명단 조회에 실패했습니다: ${error.message}` }, { status: 500 });
   }
-  return NextResponse.json({ data: data || [] });
+  const members = await attachHomeroomTeachers(access.serviceClient, (data || []) as Record<string, unknown>[]);
+  return NextResponse.json({ data: members });
 }
 
 export async function POST(request: NextRequest) {
@@ -152,7 +179,7 @@ export async function POST(request: NextRequest) {
     const { data: member, error } = await access.serviceClient
       .from('attendance_members')
       .insert({ ...input, department_id: access.departmentId })
-      .select('*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name)')
+      .select('*')
       .single();
 
     if (error) {
@@ -171,7 +198,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: member }, { status: 201 });
+    const [hydratedMember] = await attachHomeroomTeachers(access.serviceClient, [member as Record<string, unknown>]);
+    return NextResponse.json({ data: hydratedMember }, { status: 201 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: detail }, { status: 400 });
@@ -196,7 +224,7 @@ export async function PATCH(request: NextRequest) {
       .update(input)
       .eq('id', body.id)
       .eq('department_id', access.departmentId)
-      .select('*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name)')
+      .select('*')
       .single();
 
     if (error) {
@@ -205,7 +233,8 @@ export async function PATCH(request: NextRequest) {
     if (input.member_type === 'student' && typeof input.is_long_absent === 'boolean') {
       await syncLongAbsentRecords(access.serviceClient, access.departmentId, body.id, input.is_long_absent);
     }
-    return NextResponse.json({ data });
+    const [hydratedMember] = await attachHomeroomTeachers(access.serviceClient, [data as Record<string, unknown>]);
+    return NextResponse.json({ data: hydratedMember });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: detail }, { status: 400 });

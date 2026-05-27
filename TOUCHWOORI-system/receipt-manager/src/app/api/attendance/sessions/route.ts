@@ -7,11 +7,32 @@ import { getAttendanceAccess } from '@/lib/attendance-server';
 async function loadSessionRecords(serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>, sessionId: string) {
   const { data, error } = await serviceClient
     .from('attendance_records')
-    .select('*, member:attendance_members(*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name))')
+    .select('*, member:attendance_members(*)')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   if (error) throw new Error(error.message);
-  return data || [];
+  const records = data || [];
+  const teacherIds = [...new Set(
+    records.map((record) => record.member?.homeroom_teacher_id)
+      .filter((id): id is string => typeof id === 'string')
+  )];
+  if (!teacherIds.length) return records;
+
+  const { data: teachers, error: teachersError } = await serviceClient
+    .from('attendance_members')
+    .select('id, name')
+    .in('id', teacherIds);
+  if (teachersError) throw new Error(teachersError.message);
+  const teacherMap = new Map((teachers || []).map((teacher) => [teacher.id, teacher]));
+  return records.map((record) => ({
+    ...record,
+    member: record.member ? {
+      ...record.member,
+      homeroom_teacher: record.member.homeroom_teacher_id
+        ? teacherMap.get(record.member.homeroom_teacher_id) || null
+        : null,
+    } : record.member,
+  }));
 }
 
 export async function GET(request: NextRequest) {
@@ -134,10 +155,12 @@ export async function PATCH(request: NextRequest) {
       .from('attendance_records')
       .update({ status, checked_by: access.authUser.id })
       .eq('id', body.record_id)
-      .select('*, member:attendance_members(*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name))')
+      .select('*, member:attendance_members(*)')
       .single();
     if (error) throw new Error(error.message);
-    return NextResponse.json({ data });
+    const [hydratedRecord] = await loadSessionRecords(access.serviceClient, data.session_id)
+      .then((records) => records.filter((record) => record.id === data.id));
+    return NextResponse.json({ data: hydratedRecord || data });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `출석 상태 수정에 실패했습니다: ${detail}` }, { status: 500 });
