@@ -16,6 +16,7 @@ import {
   Upload,
   PlusCircle,
   CalendarCheck,
+  ChartNoAxesColumnIncreasing,
   UserRoundCog,
 } from 'lucide-react';
 import { useUser } from '@/hooks/useUser';
@@ -87,6 +88,7 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
       title: '출석관리',
       items: [
         { label: '출석 체크', href: '/attendance', icon: CalendarCheck },
+        { label: '출석 통계', href: '/attendance/statistics', icon: ChartNoAxesColumnIncreasing },
         ...(canManageAttendance
           ? [{ label: '재적 관리', href: '/attendance/roster', icon: UserRoundCog }]
           : []),
@@ -211,6 +213,8 @@ export default function Sidebar({ role, mobile = false }: SidebarProps) {
                 const isActive =
                   item.href === '/'
                     ? pathname === '/'
+                    : item.href === '/attendance'
+                      ? pathname === '/attendance'
                     : pathname.startsWith(item.href);
                 return (
                   <li key={item.href}>
