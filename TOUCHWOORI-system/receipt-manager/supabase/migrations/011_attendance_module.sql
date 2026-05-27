@@ -3,7 +3,7 @@
 -- ============================================
 
 CREATE TABLE attendance_members (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   department_id TEXT NOT NULL REFERENCES departments(id),
   member_type TEXT NOT NULL CHECK (member_type IN ('student', 'teacher')),
   name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 50),
@@ -27,7 +27,7 @@ CREATE TABLE attendance_members (
 );
 
 CREATE TABLE attendance_sessions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   department_id TEXT NOT NULL REFERENCES departments(id),
   attendance_date DATE NOT NULL,
   week_label TEXT NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE attendance_sessions (
 );
 
 CREATE TABLE attendance_records (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
   member_id UUID NOT NULL REFERENCES attendance_members(id),
   status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'absent', 'late')),

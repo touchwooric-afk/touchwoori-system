@@ -1,3 +1,4 @@
+-- 0030: 계좌 즐겨찾기 및 영수증 입금 계좌 정보
 -- 1. account_favorites 테이블 (계좌 즐겨찾기)
 CREATE TABLE IF NOT EXISTS account_favorites (
   id             uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
