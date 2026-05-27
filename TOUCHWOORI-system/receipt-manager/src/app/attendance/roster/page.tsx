@@ -4,7 +4,7 @@ export const runtime = 'edge';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Plus, UserRoundCog } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2, UserRoundCog } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
@@ -20,11 +20,17 @@ interface MemberForm {
   position: string;
   is_homeroom: boolean;
   student_kind: AttendanceStudentKind;
-  active_from: string;
-  active_until: string;
+  is_long_absent: boolean;
+  homeroom_teacher_id: string;
   is_active: boolean;
   memo: string;
 }
+
+const GRADE_STYLES: Record<number, string> = {
+  1: 'bg-amber-50 text-amber-700',
+  2: 'bg-blue-50 text-blue-700',
+  3: 'bg-purple-50 text-purple-700',
+};
 
 const EMPTY_FORM: MemberForm = {
   member_type: 'student',
@@ -33,8 +39,8 @@ const EMPTY_FORM: MemberForm = {
   position: '',
   is_homeroom: false,
   student_kind: 'enrolled',
-  active_from: '',
-  active_until: '',
+  is_long_absent: false,
+  homeroom_teacher_id: '',
   is_active: true,
   memo: '',
 };
@@ -84,8 +90,8 @@ export default function AttendanceRosterPage() {
       position: member.position || '',
       is_homeroom: member.is_homeroom,
       student_kind: member.student_kind || 'enrolled',
-      active_from: member.active_from,
-      active_until: member.active_until || '',
+      is_long_absent: member.is_long_absent,
+      homeroom_teacher_id: member.homeroom_teacher_id || '',
       is_active: member.is_active,
       memo: member.memo || '',
     });
@@ -118,7 +124,34 @@ export default function AttendanceRosterPage() {
   };
 
   const teachers = members.filter((member) => member.member_type === 'teacher');
-  const students = members.filter((member) => member.member_type === 'student');
+  const selectableTeachers = teachers.filter((member) => member.is_active);
+  const students = members.filter((member) => member.member_type === 'student')
+    .sort((a, b) =>
+      Number(a.is_long_absent) - Number(b.is_long_absent)
+      || (a.grade || 0) - (b.grade || 0)
+      || a.name.localeCompare(b.name, 'ko'));
+
+  const removeTeacher = async () => {
+    if (!editingId || form.member_type !== 'teacher') return;
+    if (!window.confirm(`${form.name} 선생님을 담임/교사 명단에서 삭제할까요?\n과거 출석 기록은 유지됩니다.`)) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/attendance/roster', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingId, department_id: activeDept }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success('교사를 삭제했습니다. 과거 출석 기록은 유지됩니다');
+      setModalOpen(false);
+      await loadMembers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '교사 삭제에 실패했습니다');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const renderMember = (member: AttendanceMember) => (
     <div key={member.id} className={`flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 last:border-0 ${!member.is_active ? 'opacity-50' : ''}`}>
@@ -127,10 +160,15 @@ export default function AttendanceRosterPage() {
           {member.name}
           {member.student_kind === 'newcomer' && <span className="ml-2 rounded-full bg-info-50 px-2 py-0.5 text-xs text-info-600">새친구</span>}
           {member.is_homeroom && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">담임</span>}
+          {member.is_long_absent && <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">장결</span>}
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          {member.member_type === 'teacher' ? member.position || '교사' : `${member.grade}학년`}
-          {member.active_until ? ` · ${member.active_until}까지` : ''}
+          {member.member_type === 'teacher' ? member.position || '교사' : (
+            <>
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${GRADE_STYLES[member.grade || 1]}`}>{member.grade}학년</span>
+              {member.homeroom_teacher?.name ? ` · 담임 ${member.homeroom_teacher.name}` : ''}
+            </>
+          )}
           {!member.is_active ? ' · 비활성' : ''}
         </p>
       </div>
@@ -149,8 +187,8 @@ export default function AttendanceRosterPage() {
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5"><UserRoundCog className="h-6 w-6" /></div>
               <div>
-                <h1 className="text-2xl font-bold">출석 명단 관리</h1>
-                <p className="mt-0.5 text-sm text-white/80">학생과 교사 정보, 담임 및 재직 기간을 관리합니다</p>
+                <h1 className="text-2xl font-bold">재적 관리</h1>
+                <p className="mt-0.5 text-sm text-white/80">학생 재적, 장결 상태와 담임선생님을 관리합니다</p>
               </div>
             </div>
             <Link href="/attendance">
@@ -189,7 +227,7 @@ export default function AttendanceRosterPage() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? '명단 정보 수정' : '명단 등록'}>
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? '재적 정보 수정' : '재적 등록'}>
         <form onSubmit={saveMember} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -216,31 +254,55 @@ export default function AttendanceRosterPage() {
           </div>
 
           {form.member_type === 'student' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">학년</label>
-                <select
-                  value={form.grade}
-                  onChange={(event) => setForm((current) => ({ ...current, grade: Number(event.target.value) }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value={1}>1학년</option>
-                  <option value={2}>2학년</option>
-                  <option value={3}>3학년</option>
-                </select>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">학년</label>
+                  <select
+                    value={form.grade}
+                    onChange={(event) => setForm((current) => ({ ...current, grade: Number(event.target.value) }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value={1}>1학년</option>
+                    <option value={2}>2학년</option>
+                    <option value={3}>3학년</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">등록 구분</label>
+                  <select
+                    value={form.student_kind}
+                    onChange={(event) => setForm((current) => ({ ...current, student_kind: event.target.value as AttendanceStudentKind }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="enrolled">재적 학생</option>
+                    <option value="newcomer">새친구</option>
+                  </select>
+                </div>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">등록 구분</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">담임선생님</label>
                 <select
-                  value={form.student_kind}
-                  onChange={(event) => setForm((current) => ({ ...current, student_kind: event.target.value as AttendanceStudentKind }))}
+                  value={form.homeroom_teacher_id}
+                  onChange={(event) => setForm((current) => ({ ...current, homeroom_teacher_id: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 >
-                  <option value="enrolled">재적 학생</option>
-                  <option value="newcomer">새친구</option>
+                  <option value="">담임 미지정</option>
+                  {selectableTeachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>{teacher.name}{teacher.is_homeroom ? ' (담임)' : ''}</option>
+                  ))}
                 </select>
               </div>
-            </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.is_long_absent}
+                  onChange={(event) => setForm((current) => ({ ...current, is_long_absent: event.target.checked }))}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                />
+                장결자로 등록 (새 출석 회차에서 자동 결석)
+              </label>
+            </>
           ) : (
             <>
               <div>
@@ -264,26 +326,6 @@ export default function AttendanceRosterPage() {
             </>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">활동 시작일</label>
-              <input
-                type="date"
-                value={form.active_from}
-                onChange={(event) => setForm((current) => ({ ...current, active_from: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">활동 종료일</label>
-              <input
-                type="date"
-                value={form.active_until}
-                onChange={(event) => setForm((current) => ({ ...current, active_until: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">메모</label>
             <input
@@ -299,11 +341,18 @@ export default function AttendanceRosterPage() {
               onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))}
               className="h-4 w-4 rounded border-gray-300 text-primary-600"
             />
-            현재 명단에서 활성화
+            {form.member_type === 'student' ? '현재 재적에 포함' : '현재 교사 명단에 표시'}
           </label>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-between gap-2">
+            {editingId && form.member_type === 'teacher' ? (
+              <Button type="button" variant="secondary" onClick={removeTeacher} disabled={submitting}>
+                <Trash2 className="h-4 w-4" />교사 삭제
+              </Button>
+            ) : <span />}
+            <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>취소</Button>
             <Button type="submit" loading={submitting}>저장</Button>
+            </div>
           </div>
         </form>
       </Modal>

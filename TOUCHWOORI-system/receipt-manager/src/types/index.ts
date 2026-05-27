@@ -156,6 +156,9 @@ export interface AttendanceMember {
   position: string | null;
   is_homeroom: boolean;
   student_kind: AttendanceStudentKind | null;
+  is_long_absent: boolean;
+  homeroom_teacher_id: string | null;
+  homeroom_teacher?: Pick<AttendanceMember, 'id' | 'name'> | null;
   active_from: string;
   active_until: string | null;
   is_active: boolean;

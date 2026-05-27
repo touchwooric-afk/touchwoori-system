@@ -27,6 +27,12 @@ const STATUS_OPTIONS: { value: AttendanceStatus; label: string; activeClass: str
   { value: 'late', label: '지각', activeClass: 'bg-warning-500 text-white border-warning-500' },
 ];
 
+const GRADE_STYLES: Record<number, string> = {
+  1: 'border-amber-200 bg-amber-50/80',
+  2: 'border-blue-200 bg-blue-50/80',
+  3: 'border-purple-200 bg-purple-50/80',
+};
+
 interface NewcomerForm {
   name: string;
   grade: number;
@@ -44,16 +50,27 @@ function AttendanceRow({
   if (!record.member) return null;
   const subtitle = record.member.member_type === 'teacher'
     ? [record.member.position, record.member.is_homeroom ? '담임' : null].filter(Boolean).join(' · ')
-    : `${record.member.grade}학년${record.member.student_kind === 'newcomer' ? ' · 새친구' : ''}`;
+    : [
+      `${record.member.grade}학년`,
+      record.member.student_kind === 'newcomer' ? '새친구' : null,
+      record.member.homeroom_teacher?.name ? `담임 ${record.member.homeroom_teacher.name}` : null,
+      record.member.is_long_absent ? '장결' : null,
+    ].filter(Boolean).join(' · ');
+  const statusOptions = record.member.member_type === 'teacher'
+    ? STATUS_OPTIONS.filter((option) => option.value !== 'late')
+    : STATUS_OPTIONS;
+  const rowClass = record.member.member_type === 'student' && record.member.grade
+    ? GRADE_STYLES[record.member.grade]
+    : 'border-white/70 bg-white/70';
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-white/70 bg-white/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${rowClass}`}>
       <div>
         <p className="text-sm font-semibold text-gray-900">{record.member.name}</p>
         <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>
       </div>
       <div className="flex gap-1.5">
-        {STATUS_OPTIONS.map((option) => (
+        {statusOptions.map((option) => (
           <button
             type="button"
             key={option.value}
@@ -132,12 +149,17 @@ export default function AttendancePage() {
   );
   const studentRecords = useMemo(
     () => records.filter((record) => record.member?.member_type === 'student')
-      .sort((a, b) => (a.member?.grade || 0) - (b.member?.grade || 0) || (a.member?.name || '').localeCompare(b.member?.name || '', 'ko')),
+      .sort((a, b) =>
+        Number(Boolean(a.member?.is_long_absent)) - Number(Boolean(b.member?.is_long_absent))
+        || (a.member?.grade || 0) - (b.member?.grade || 0)
+        || (a.member?.name || '').localeCompare(b.member?.name || '', 'ko')),
     [records]
   );
 
-  const countPresent = (items: AttendanceRecord[]) =>
+  const countStudentAttendance = (items: AttendanceRecord[]) =>
     items.filter((record) => record.status === 'present' || record.status === 'late').length;
+  const countTeacherAttendance = (items: AttendanceRecord[]) =>
+    items.filter((record) => record.status === 'present').length;
   const countStatus = (items: AttendanceRecord[], status: AttendanceStatus) =>
     items.filter((record) => record.status === status).length;
 
@@ -192,7 +214,7 @@ export default function AttendancePage() {
   };
 
   const copyReport = async () => {
-    const report = `${activeDept}\n\n교사 ${countPresent(teacherRecords)}명\n학생 ${countPresent(studentRecords)}명`;
+    const report = `${activeDept}\n\n교사 ${countTeacherAttendance(teacherRecords)}명\n학생 ${countStudentAttendance(studentRecords)}명`;
     try {
       await navigator.clipboard.writeText(report);
       toast.success('보고 문구가 복사되었습니다');
@@ -219,7 +241,7 @@ export default function AttendancePage() {
               <Link href="/attendance/roster">
                 <Button variant="secondary" className="!border-white/30 !bg-white/20 !text-white hover:!bg-white/30">
                   <Settings className="h-4 w-4" />
-                  명단 관리
+                  재적 관리
                 </Button>
               </Link>
             )}
@@ -247,7 +269,7 @@ export default function AttendancePage() {
             )}
           </div>
           <p className="mt-3 text-xs text-gray-500">
-            처음 여는 주일 회차에는 당시 활성 명단이 모두 출석으로 자동 등록됩니다.
+            처음 여는 주일 회차에는 재적 학생과 교사가 출석으로 등록되며, 장결 학생은 결석으로 자동 등록됩니다.
           </p>
         </div>
 
@@ -258,17 +280,18 @@ export default function AttendancePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="glass-panel rounded-2xl p-5">
                 <p className="text-sm font-semibold text-gray-500">교사 참석</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{countPresent(teacherRecords)}명</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">{countTeacherAttendance(teacherRecords)}명</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  출석 {countStatus(teacherRecords, 'present')} · 지각 {countStatus(teacherRecords, 'late')} · 결석 {countStatus(teacherRecords, 'absent')}
+                  출석 {countStatus(teacherRecords, 'present')} · 결석 {countStatus(teacherRecords, 'absent')}
                 </p>
               </div>
               <div className="glass-panel rounded-2xl p-5">
                 <p className="text-sm font-semibold text-gray-500">학생 참석</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{countPresent(studentRecords)}명</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">{countStudentAttendance(studentRecords)}명</p>
                 <p className="mt-1 text-xs text-gray-500">
                   출석 {countStatus(studentRecords, 'present')} · 지각 {countStatus(studentRecords, 'late')} · 결석 {countStatus(studentRecords, 'absent')}
                 </p>
+                <p className="mt-1 text-xs font-medium text-primary-700">참석 인원에는 지각이 포함됩니다.</p>
               </div>
             </div>
 
@@ -320,7 +343,7 @@ export default function AttendancePage() {
               <aside className="space-y-4">
                 <div className="glass-panel rounded-2xl p-5">
                   <h2 className="text-sm font-bold text-gray-900">보고용 문구</h2>
-                  <pre className="mt-3 rounded-xl bg-gray-50 p-4 font-sans text-sm leading-7 text-gray-800">{`${activeDept}\n\n교사 ${countPresent(teacherRecords)}명\n학생 ${countPresent(studentRecords)}명`}</pre>
+                  <pre className="mt-3 rounded-xl bg-gray-50 p-4 font-sans text-sm leading-7 text-gray-800">{`${activeDept}\n\n교사 ${countTeacherAttendance(teacherRecords)}명\n학생 ${countStudentAttendance(studentRecords)}명`}</pre>
                   <Button className="mt-3 w-full" onClick={copyReport}>
                     <ClipboardCopy className="h-4 w-4" />
                     보고 문구 복사

@@ -88,7 +88,7 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
       items: [
         { label: '출석 체크', href: '/attendance', icon: CalendarCheck },
         ...(canManageAttendance
-          ? [{ label: '출석 명단 관리', href: '/attendance/roster', icon: UserRoundCog }]
+          ? [{ label: '재적 관리', href: '/attendance/roster', icon: UserRoundCog }]
           : []),
       ],
     });

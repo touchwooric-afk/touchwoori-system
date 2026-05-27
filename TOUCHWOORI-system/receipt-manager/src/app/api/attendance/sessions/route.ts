@@ -7,7 +7,7 @@ import { getAttendanceAccess } from '@/lib/attendance-server';
 async function loadSessionRecords(serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>, sessionId: string) {
   const { data, error } = await serviceClient
     .from('attendance_records')
-    .select('*, member:attendance_members(*)')
+    .select('*, member:attendance_members(*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name))')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
   if (error) throw new Error(error.message);
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     const { data: members, error: membersError } = await access.serviceClient
       .from('attendance_members')
-      .select('id')
+      .select('id, member_type, is_long_absent')
       .eq('department_id', access.departmentId)
       .eq('is_active', true)
       .lte('active_from', attendanceDate)
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           members.map((member) => ({
             session_id: session.id,
             member_id: member.id,
-            status: 'present',
+            status: member.member_type === 'student' && member.is_long_absent ? 'absent' : 'present',
             checked_by: access.authUser.id,
           })),
           { onConflict: 'session_id,member_id', ignoreDuplicates: true }
@@ -118,19 +118,23 @@ export async function PATCH(request: NextRequest) {
 
     const { data: record } = await access.serviceClient
       .from('attendance_records')
-      .select('id, attendance_sessions!inner(department_id)')
+      .select('id, member:attendance_members!inner(member_type), attendance_sessions!inner(department_id)')
       .eq('id', body.record_id)
       .eq('attendance_sessions.department_id', access.departmentId)
       .single();
     if (!record) {
       return NextResponse.json({ error: '출석 기록을 찾을 수 없습니다' }, { status: 404 });
     }
+    const member = Array.isArray(record.member) ? record.member[0] : record.member;
+    if (member?.member_type === 'teacher' && status === 'late') {
+      return NextResponse.json({ error: '교사는 출석 또는 결석으로만 처리할 수 있습니다' }, { status: 400 });
+    }
 
     const { data, error } = await access.serviceClient
       .from('attendance_records')
       .update({ status, checked_by: access.authUser.id })
       .eq('id', body.record_id)
-      .select('*, member:attendance_members(*)')
+      .select('*, member:attendance_members(*, homeroom_teacher:attendance_members!attendance_members_homeroom_teacher_id_fkey(id, name))')
       .single();
     if (error) throw new Error(error.message);
     return NextResponse.json({ data });
