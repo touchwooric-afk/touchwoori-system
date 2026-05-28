@@ -4,7 +4,7 @@ export const runtime = 'edge';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarCheck, ChartNoAxesColumnIncreasing, Users } from 'lucide-react';
+import { CalendarCheck, ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -47,6 +47,21 @@ function currentMonthInKorea() {
   return `${year}-${month}`;
 }
 
+function monthLabel(month: string) {
+  const [year, monthNumber] = month.split('-');
+  return `${year}년 ${Number(monthNumber)}월`;
+}
+
+function shiftMonth(month: string, amount: number) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 1 + amount, 1));
+  return date.toISOString().slice(0, 7);
+}
+
+function makeMonth(year: string, monthNumber: string) {
+  return `${year}-${monthNumber.padStart(2, '0')}`;
+}
+
 function countStudentAttendance(records: AttendanceRecord[]) {
   return records.filter((record) => record.status === 'present' || record.status === 'late').length;
 }
@@ -55,21 +70,21 @@ function countTeacherAttendance(records: AttendanceRecord[]) {
   return records.filter((record) => record.status === 'present').length;
 }
 
-function countStatus(records: AttendanceRecord[], status: AttendanceStatus) {
-  return records.filter((record) => record.status === status).length;
-}
-
-function attendanceRate(attended: number, total: number) {
-  return total > 0 ? Math.round((attended / total) * 100) : 0;
-}
-
 export default function AttendanceStatisticsPage() {
   const { activeDept } = useActiveDept();
   const toast = useToast();
   const [month, setMonth] = useState(currentMonthInKorea);
   const [data, setData] = useState<StatisticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const selectedYear = month.slice(0, 4);
+  const selectedMonthNumber = month.slice(5, 7);
+  const yearOptions = useMemo(() => {
+    const currentYear = Number(currentMonthInKorea().slice(0, 4));
+    const selected = Number(selectedYear);
+    const start = Math.min(currentYear - 1, selected - 1);
+    const end = Math.max(currentYear + 1, selected + 1);
+    return Array.from({ length: end - start + 1 }, (_, index) => String(start + index));
+  }, [selectedYear]);
 
   const loadStatistics = useCallback(async (selectedMonth: string) => {
     if (!activeDept) return;
@@ -81,11 +96,6 @@ export default function AttendanceStatisticsPage() {
       if (!res.ok) throw new Error(json.error);
       const result = json.data as StatisticsData;
       setData(result);
-      setSelectedSessionId((current) => (
-        result.sessions.some((session) => session.id === current)
-          ? current
-          : result.sessions[result.sessions.length - 1]?.id || ''
-      ));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '출석 통계를 불러올 수 없습니다');
     } finally {
@@ -97,23 +107,9 @@ export default function AttendanceStatisticsPage() {
     loadStatistics(month);
   }, [loadStatistics, month]);
 
-  const sessionsWithRecords = useMemo(() => (data?.sessions || []).map((session) => {
-    const records = (data?.records || []).filter((record) => record.session_id === session.id);
-    const teachers = records.filter((record) => record.member?.member_type === 'teacher');
-    const students = records.filter((record) => record.member?.member_type === 'student');
-    return { session, teachers, students };
-  }), [data]);
-
-  const selectedWeek = sessionsWithRecords.find(({ session }) => session.id === selectedSessionId);
-  const monthlyTeachers = sessionsWithRecords.flatMap(({ teachers }) => teachers);
-  const monthlyStudents = sessionsWithRecords.flatMap(({ students }) => students);
-  const monthStudentRate = attendanceRate(countStudentAttendance(monthlyStudents), monthlyStudents.length);
-  const monthTeacherRate = attendanceRate(countTeacherAttendance(monthlyTeachers), monthlyTeachers.length);
-  const selectedTeacherRecords = selectedWeek?.teachers || [];
-  const selectedStudentRecords = [...(selectedWeek?.students || [])].sort((a, b) =>
-    Number(Boolean(a.member?.is_long_absent)) - Number(Boolean(b.member?.is_long_absent))
-    || (a.member?.grade || 0) - (b.member?.grade || 0)
-    || (a.member?.name || '').localeCompare(b.member?.name || '', 'ko'));
+  const sessions = useMemo(() => [...(data?.sessions || [])].sort((a, b) =>
+    a.attendance_date.localeCompare(b.attendance_date)
+  ), [data]);
   const memberRows = useMemo(() => {
     const rowMap = new Map<string, { member: AttendanceMember; recordsBySession: Record<string, AttendanceRecord> }>();
     for (const record of data?.records || []) {
@@ -136,6 +132,8 @@ export default function AttendanceStatisticsPage() {
 
     return { teachers, students };
   }, [data]);
+  const firstSessionDate = sessions[0]?.attendance_date;
+  const lastSessionDate = sessions[sessions.length - 1]?.attendance_date;
 
   return (
     <AppShell>
@@ -148,163 +146,86 @@ export default function AttendanceStatisticsPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold">출석 통계</h1>
-                <p className="mt-0.5 text-sm text-white/80">월별 · 주차별 교사 및 학생 출석 현황을 확인합니다</p>
+                <p className="mt-0.5 text-sm text-white/80">월별 개인 출석 흐름을 한눈에 확인합니다</p>
               </div>
             </div>
-            <Link href="/attendance">
-              <Button variant="secondary" className="!border-white/30 !bg-white/20 !text-white hover:!bg-white/30">
-                <CalendarCheck className="h-4 w-4" />출석 체크
-              </Button>
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center rounded-xl border border-white/25 bg-white/15 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMonth((current) => shiftMonth(current, -1))}
+                  className="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+                  aria-label="이전 달"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <select
+                  value={selectedYear}
+                  onChange={(event) => setMonth(makeMonth(event.target.value, selectedMonthNumber))}
+                  className="h-9 rounded-lg border border-white/20 bg-white/90 px-3 text-sm font-semibold text-gray-900"
+                  aria-label="연도 선택"
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedMonthNumber}
+                  onChange={(event) => setMonth(makeMonth(selectedYear, event.target.value))}
+                  className="ml-1 h-9 rounded-lg border border-white/20 bg-white/90 px-3 text-sm font-semibold text-gray-900"
+                  aria-label="월 선택"
+                >
+                  {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map((monthNumber) => (
+                    <option key={monthNumber} value={monthNumber}>{Number(monthNumber)}월</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setMonth((current) => shiftMonth(current, 1))}
+                  className="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+                  aria-label="다음 달"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              <Link href="/attendance">
+                <Button variant="secondary" className="!border-white/30 !bg-white/20 !text-white hover:!bg-white/30">
+                  <CalendarCheck className="h-4 w-4" />출석 체크
+                </Button>
+              </Link>
+            </div>
           </div>
-        </div>
-
-        <div className="glass-panel rounded-2xl p-4 sm:p-5">
-          <label className="mb-1 block text-xs font-semibold text-gray-500">조회 월</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <p className="mt-3 text-xs text-gray-500">열린 출석 회차의 기록을 기준으로 집계합니다. 학생 참석 인원에는 지각이 포함됩니다.</p>
         </div>
 
         {loading ? (
           <PageSkeleton />
-        ) : sessionsWithRecords.length === 0 ? (
+        ) : sessions.length === 0 ? (
           <div className="glass-panel rounded-2xl p-10 text-center">
             <ChartNoAxesColumnIncreasing className="mx-auto h-10 w-10 text-gray-300" />
-            <p className="mt-3 font-semibold text-gray-800">이 달에 열린 출석 회차가 없습니다</p>
+            <p className="mt-3 font-semibold text-gray-800">{monthLabel(month)}에 열린 출석 회차가 없습니다</p>
             <p className="mt-1 text-sm text-gray-500">출석 체크에서 주일 회차를 열면 여기에 집계됩니다.</p>
           </div>
         ) : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="glass-panel rounded-2xl p-5">
-                <p className="text-sm font-semibold text-gray-500">집계 주차</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{sessionsWithRecords.length}회</p>
-              </div>
-              <div className="glass-panel rounded-2xl p-5">
-                <p className="text-sm font-semibold text-gray-500">교사 누적 참석</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{countTeacherAttendance(monthlyTeachers)}명</p>
-                <p className="mt-1 text-xs text-gray-500">출석률 {monthTeacherRate}% · 회차별 인원 합계</p>
-              </div>
-              <div className="glass-panel rounded-2xl p-5">
-                <p className="text-sm font-semibold text-gray-500">학생 누적 참석</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{countStudentAttendance(monthlyStudents)}명</p>
-                <p className="mt-1 text-xs text-gray-500">출석률 {monthStudentRate}% · 출석 + 지각</p>
-              </div>
-            </div>
-
-            <section className="glass-panel rounded-2xl p-4 sm:p-5">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">{Number(month.slice(5))}월 주차별 현황</h2>
-                  <p className="mt-1 text-xs text-gray-500">주차를 누르면 아래 상세 명단이 해당 주차로 이동합니다.</p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {sessionsWithRecords.map(({ session }) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() => setSelectedSessionId(session.id)}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        selectedSessionId === session.id
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-white text-gray-600 hover:bg-primary-50 hover:text-primary-700'
-                      }`}
-                    >
-                      {session.week_label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="overflow-x-auto rounded-xl border border-white/70">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead className="bg-gray-50/90 text-xs font-semibold text-gray-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">주차</th>
-                      <th className="px-4 py-3 text-left">날짜</th>
-                      <th className="px-4 py-3 text-center">교사</th>
-                      <th className="px-4 py-3 text-center">학생 참석</th>
-                      <th className="px-4 py-3 text-center">학생 출석</th>
-                      <th className="px-4 py-3 text-center">학생 지각</th>
-                      <th className="px-4 py-3 text-center">학생 결석</th>
-                      <th className="px-4 py-3 text-center">학생 출석률</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white/65">
-                    {sessionsWithRecords.map(({ session, teachers, students }) => {
-                      const studentAttended = countStudentAttendance(students);
-                      return (
-                        <tr
-                          key={session.id}
-                          onClick={() => setSelectedSessionId(session.id)}
-                          className={`cursor-pointer transition-colors ${
-                            selectedSessionId === session.id ? 'bg-primary-50/80' : 'hover:bg-gray-50/80'
-                          }`}
-                        >
-                          <td className="px-4 py-3 font-bold text-gray-900">{session.week_label}</td>
-                          <td className="px-4 py-3 text-gray-500">{session.attendance_date}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-gray-900">{countTeacherAttendance(teachers)} / {teachers.length}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-primary-700">{studentAttended} / {students.length}</td>
-                          <td className="px-4 py-3 text-center text-success-700">{countStatus(students, 'present')}</td>
-                          <td className="px-4 py-3 text-center text-warning-600">{countStatus(students, 'late')}</td>
-                          <td className="px-4 py-3 text-center text-danger-700">{countStatus(students, 'absent')}</td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-800">
-                              {attendanceRate(studentAttended, students.length)}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="glass-panel rounded-2xl p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2">
+          <section className="glass-panel rounded-2xl p-4 sm:p-5">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary-600" />
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">개인별 월간 출석표</h2>
-                  <p className="mt-0.5 text-xs text-gray-500">출=출석, 지=지각, 결=결석입니다. 지각은 참석 인원에 포함됩니다.</p>
+                  <h2 className="text-lg font-bold text-gray-900">{monthLabel(month)} 월간 출석표</h2>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {firstSessionDate === lastSessionDate ? firstSessionDate : `${firstSessionDate} ~ ${lastSessionDate}`} · 출=출석, 지=지각, 결=결석
+                  </p>
                 </div>
               </div>
-              <AttendanceMatrix title="학생" rows={memberRows.students} sessions={data?.sessions || []} />
-              <div className="mt-6">
-                <AttendanceMatrix title="교사" rows={memberRows.teachers} sessions={data?.sessions || []} compact />
-              </div>
-            </section>
-
-            {selectedWeek && (
-              <section className="glass-panel rounded-2xl p-4 sm:p-5">
-                <h2 className="text-lg font-bold text-gray-900">{selectedWeek.session.week_label} 상세 현황</h2>
-                <p className="mt-1 text-sm text-gray-500">{selectedWeek.session.attendance_date} · {selectedWeek.session.title}</p>
-                <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                  <div>
-                    <h3 className="mb-3 text-sm font-bold text-gray-800">교사</h3>
-                    <div className="space-y-2">
-                      {selectedTeacherRecords.map((record) => (
-                        <StatusRow key={record.id} record={record} />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="mb-3 text-sm font-bold text-gray-800">학생</h3>
-                    <div className="space-y-2">
-                      {selectedStudentRecords.map((record) => (
-                        <StatusRow key={record.id} record={record} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            )}
-          </>
+              <p className="rounded-full bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700">
+                지각은 참석으로 포함
+              </p>
+            </div>
+            <AttendanceMatrix title="학생" rows={memberRows.students} sessions={sessions} />
+            <div className="mt-6">
+              <AttendanceMatrix title="교사" rows={memberRows.teachers} sessions={sessions} compact />
+            </div>
+          </section>
         )}
       </div>
     </AppShell>
@@ -341,7 +262,9 @@ function AttendanceMatrix({
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white/65">
             {rows.map(({ member, recordsBySession }) => {
-              const records = sessions.map((session) => recordsBySession[session.id]).filter(Boolean);
+              const records = sessions
+                .map((session) => recordsBySession[session.id])
+                .filter((record): record is AttendanceRecord => Boolean(record));
               const attended = member.member_type === 'teacher'
                 ? countTeacherAttendance(records)
                 : countStudentAttendance(records);
@@ -388,26 +311,6 @@ function AttendanceMatrix({
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function StatusRow({ record }: { record: AttendanceRecord }) {
-  if (!record.member) return null;
-  const status = STATUS_STYLES[record.status];
-  const grade = record.member.grade;
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-semibold text-gray-900">{record.member.name}</p>
-        {record.member.member_type === 'student' && grade && (
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${GRADE_STYLES[grade]}`}>{grade}학년</span>
-        )}
-        {record.member.is_long_absent && (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">장결</span>
-        )}
-      </div>
-      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.className}`}>{status.label}</span>
     </div>
   );
 }
