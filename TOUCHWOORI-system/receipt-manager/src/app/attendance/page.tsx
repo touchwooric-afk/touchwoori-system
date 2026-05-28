@@ -2,7 +2,7 @@
 
 export const runtime = 'edge';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   CalendarCheck,
@@ -40,11 +40,11 @@ interface NewcomerForm {
 
 function AttendanceRow({
   record,
-  updating,
+  saving,
   onStatusChange,
 }: {
   record: AttendanceRecord;
-  updating: boolean;
+  saving: boolean;
   onStatusChange: (record: AttendanceRecord, status: AttendanceStatus) => void;
 }) {
   if (!record.member) return null;
@@ -64,7 +64,7 @@ function AttendanceRow({
     : 'border-white/70 bg-white/70';
 
   return (
-    <div className={`flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${rowClass}`}>
+    <div className={`flex flex-col gap-3 rounded-xl border px-4 py-3 transition-opacity sm:flex-row sm:items-center sm:justify-between ${saving ? 'opacity-85' : ''} ${rowClass}`}>
       <div>
         <p className="text-sm font-semibold text-gray-900">{record.member.name}</p>
         <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>
@@ -74,7 +74,7 @@ function AttendanceRow({
           <button
             type="button"
             key={option.value}
-            disabled={updating}
+            aria-busy={saving}
             onClick={() => onStatusChange(record, option.value)}
             className={`min-w-[58px] rounded-lg border px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
               record.status === option.value
@@ -99,10 +99,12 @@ export default function AttendancePage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [history, setHistory] = useState<AttendanceSession[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [newcomerModalOpen, setNewcomerModalOpen] = useState(false);
   const [newcomerForm, setNewcomerForm] = useState<NewcomerForm>({ name: '', grade: 1 });
   const [addingNewcomer, setAddingNewcomer] = useState(false);
+  const statusRequestSeqRef = useRef<Record<string, number>>({});
+  const statusAbortRef = useRef<Record<string, AbortController>>({});
 
   const canManageRoster = Boolean(user?.role && ATTENDANCE_MANAGE_ROLES.includes(user.role));
 
@@ -165,20 +167,47 @@ export default function AttendancePage() {
 
   const handleStatusChange = async (record: AttendanceRecord, status: AttendanceStatus) => {
     if (record.status === status) return;
-    setUpdatingId(record.id);
+    const previousStatus = record.status;
+    const requestSeq = (statusRequestSeqRef.current[record.id] || 0) + 1;
+    statusRequestSeqRef.current[record.id] = requestSeq;
+    statusAbortRef.current[record.id]?.abort();
+    const abortController = new AbortController();
+    statusAbortRef.current[record.id] = abortController;
+
+    setRecords((current) => current.map((item) =>
+      item.id === record.id ? { ...item, status } : item
+    ));
+    setSavingIds((current) => new Set(current).add(record.id));
+
     try {
       const res = await fetch('/api/attendance/sessions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ record_id: record.id, status, department_id: activeDept }),
+        signal: abortController.signal,
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setRecords((current) => current.map((item) => item.id === record.id ? json.data : item));
+      if (statusRequestSeqRef.current[record.id] === requestSeq) {
+        setRecords((current) => current.map((item) => item.id === record.id ? json.data : item));
+      }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (statusRequestSeqRef.current[record.id] === requestSeq) {
+        setRecords((current) => current.map((item) =>
+          item.id === record.id ? { ...item, status: previousStatus } : item
+        ));
+      }
       toast.error(err instanceof Error ? err.message : '출석 상태를 변경하지 못했습니다');
     } finally {
-      setUpdatingId(null);
+      if (statusRequestSeqRef.current[record.id] === requestSeq) {
+        setSavingIds((current) => {
+          const next = new Set(current);
+          next.delete(record.id);
+          return next;
+        });
+        delete statusAbortRef.current[record.id];
+      }
     }
   };
 
@@ -307,7 +336,7 @@ export default function AttendancePage() {
                       <AttendanceRow
                         key={record.id}
                         record={record}
-                        updating={updatingId === record.id}
+                        saving={savingIds.has(record.id)}
                         onStatusChange={handleStatusChange}
                       />
                     ))}
@@ -331,7 +360,7 @@ export default function AttendancePage() {
                       <AttendanceRow
                         key={record.id}
                         record={record}
-                        updating={updatingId === record.id}
+                        saving={savingIds.has(record.id)}
                         onStatusChange={handleStatusChange}
                       />
                     ))}
