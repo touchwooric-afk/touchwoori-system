@@ -4,13 +4,13 @@ export const runtime = 'edge';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarCheck, ChartNoAxesColumnIncreasing } from 'lucide-react';
+import { CalendarCheck, ChartNoAxesColumnIncreasing, Users } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { useActiveDept } from '@/contexts/DepartmentContext';
-import type { AttendanceRecord, AttendanceSession, AttendanceStatus } from '@/types';
+import type { AttendanceMember, AttendanceRecord, AttendanceSession, AttendanceStatus } from '@/types';
 
 interface StatisticsData {
   month: string;
@@ -28,6 +28,12 @@ const STATUS_STYLES: Record<AttendanceStatus, { label: string; className: string
   present: { label: '출석', className: 'bg-success-50 text-success-700' },
   absent: { label: '결석', className: 'bg-danger-50 text-danger-700' },
   late: { label: '지각', className: 'bg-warning-50 text-warning-600' },
+};
+
+const STATUS_SHORT_LABELS: Record<AttendanceStatus, string> = {
+  present: '출',
+  absent: '결',
+  late: '지',
 };
 
 function currentMonthInKorea() {
@@ -51,6 +57,10 @@ function countTeacherAttendance(records: AttendanceRecord[]) {
 
 function countStatus(records: AttendanceRecord[], status: AttendanceStatus) {
   return records.filter((record) => record.status === status).length;
+}
+
+function attendanceRate(attended: number, total: number) {
+  return total > 0 ? Math.round((attended / total) * 100) : 0;
 }
 
 export default function AttendanceStatisticsPage() {
@@ -97,11 +107,35 @@ export default function AttendanceStatisticsPage() {
   const selectedWeek = sessionsWithRecords.find(({ session }) => session.id === selectedSessionId);
   const monthlyTeachers = sessionsWithRecords.flatMap(({ teachers }) => teachers);
   const monthlyStudents = sessionsWithRecords.flatMap(({ students }) => students);
+  const monthStudentRate = attendanceRate(countStudentAttendance(monthlyStudents), monthlyStudents.length);
+  const monthTeacherRate = attendanceRate(countTeacherAttendance(monthlyTeachers), monthlyTeachers.length);
   const selectedTeacherRecords = selectedWeek?.teachers || [];
   const selectedStudentRecords = [...(selectedWeek?.students || [])].sort((a, b) =>
     Number(Boolean(a.member?.is_long_absent)) - Number(Boolean(b.member?.is_long_absent))
     || (a.member?.grade || 0) - (b.member?.grade || 0)
     || (a.member?.name || '').localeCompare(b.member?.name || '', 'ko'));
+  const memberRows = useMemo(() => {
+    const rowMap = new Map<string, { member: AttendanceMember; recordsBySession: Record<string, AttendanceRecord> }>();
+    for (const record of data?.records || []) {
+      if (!record.member) continue;
+      const row = rowMap.get(record.member.id) || { member: record.member, recordsBySession: {} };
+      row.recordsBySession[record.session_id] = record;
+      rowMap.set(record.member.id, row);
+    }
+
+    const rows = Array.from(rowMap.values());
+    const teachers = rows
+      .filter((row) => row.member.member_type === 'teacher')
+      .sort((a, b) => a.member.name.localeCompare(b.member.name, 'ko'));
+    const students = rows
+      .filter((row) => row.member.member_type === 'student')
+      .sort((a, b) =>
+        Number(Boolean(a.member.is_long_absent)) - Number(Boolean(b.member.is_long_absent))
+        || (a.member.grade || 0) - (b.member.grade || 0)
+        || a.member.name.localeCompare(b.member.name, 'ko'));
+
+    return { teachers, students };
+  }, [data]);
 
   return (
     <AppShell>
@@ -154,44 +188,95 @@ export default function AttendanceStatisticsPage() {
               <div className="glass-panel rounded-2xl p-5">
                 <p className="text-sm font-semibold text-gray-500">교사 누적 참석</p>
                 <p className="mt-2 text-3xl font-bold text-gray-900">{countTeacherAttendance(monthlyTeachers)}명</p>
-                <p className="mt-1 text-xs text-gray-500">출석으로 기록된 회차별 인원 합계</p>
+                <p className="mt-1 text-xs text-gray-500">출석률 {monthTeacherRate}% · 회차별 인원 합계</p>
               </div>
               <div className="glass-panel rounded-2xl p-5">
                 <p className="text-sm font-semibold text-gray-500">학생 누적 참석</p>
                 <p className="mt-2 text-3xl font-bold text-gray-900">{countStudentAttendance(monthlyStudents)}명</p>
-                <p className="mt-1 text-xs text-gray-500">출석 + 지각 회차별 인원 합계</p>
+                <p className="mt-1 text-xs text-gray-500">출석률 {monthStudentRate}% · 출석 + 지각</p>
               </div>
             </div>
 
             <section className="glass-panel rounded-2xl p-4 sm:p-5">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">{Number(month.slice(5))}월 주차별 현황</h2>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {sessionsWithRecords.map(({ session, teachers, students }) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => setSelectedSessionId(session.id)}
-                    className={`rounded-xl border p-4 text-left transition-colors ${
-                      selectedSessionId === session.id
-                        ? 'border-primary-400 bg-primary-50/70'
-                        : 'border-white/70 bg-white/70 hover:border-primary-200'
-                    }`}
-                  >
-                    <p className="font-bold text-gray-900">{session.week_label}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">{session.attendance_date}</p>
-                    <div className="mt-4 flex justify-between text-sm">
-                      <span className="text-gray-500">교사</span>
-                      <span className="font-semibold text-gray-900">{countTeacherAttendance(teachers)} / {teachers.length}명</span>
-                    </div>
-                    <div className="mt-2 flex justify-between text-sm">
-                      <span className="text-gray-500">학생</span>
-                      <span className="font-semibold text-gray-900">{countStudentAttendance(students)} / {students.length}명</span>
-                    </div>
-                    <p className="mt-3 text-xs text-gray-500">
-                      학생 출석 {countStatus(students, 'present')} · 지각 {countStatus(students, 'late')} · 결석 {countStatus(students, 'absent')}
-                    </p>
-                  </button>
-                ))}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">{Number(month.slice(5))}월 주차별 현황</h2>
+                  <p className="mt-1 text-xs text-gray-500">주차를 누르면 아래 상세 명단이 해당 주차로 이동합니다.</p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {sessionsWithRecords.map(({ session }) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => setSelectedSessionId(session.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        selectedSessionId === session.id
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-white text-gray-600 hover:bg-primary-50 hover:text-primary-700'
+                      }`}
+                    >
+                      {session.week_label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-white/70">
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead className="bg-gray-50/90 text-xs font-semibold text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">주차</th>
+                      <th className="px-4 py-3 text-left">날짜</th>
+                      <th className="px-4 py-3 text-center">교사</th>
+                      <th className="px-4 py-3 text-center">학생 참석</th>
+                      <th className="px-4 py-3 text-center">학생 출석</th>
+                      <th className="px-4 py-3 text-center">학생 지각</th>
+                      <th className="px-4 py-3 text-center">학생 결석</th>
+                      <th className="px-4 py-3 text-center">학생 출석률</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white/65">
+                    {sessionsWithRecords.map(({ session, teachers, students }) => {
+                      const studentAttended = countStudentAttendance(students);
+                      return (
+                        <tr
+                          key={session.id}
+                          onClick={() => setSelectedSessionId(session.id)}
+                          className={`cursor-pointer transition-colors ${
+                            selectedSessionId === session.id ? 'bg-primary-50/80' : 'hover:bg-gray-50/80'
+                          }`}
+                        >
+                          <td className="px-4 py-3 font-bold text-gray-900">{session.week_label}</td>
+                          <td className="px-4 py-3 text-gray-500">{session.attendance_date}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-gray-900">{countTeacherAttendance(teachers)} / {teachers.length}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-primary-700">{studentAttended} / {students.length}</td>
+                          <td className="px-4 py-3 text-center text-success-700">{countStatus(students, 'present')}</td>
+                          <td className="px-4 py-3 text-center text-warning-600">{countStatus(students, 'late')}</td>
+                          <td className="px-4 py-3 text-center text-danger-700">{countStatus(students, 'absent')}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-800">
+                              {attendanceRate(studentAttended, students.length)}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="glass-panel rounded-2xl p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary-600" />
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">개인별 월간 출석표</h2>
+                  <p className="mt-0.5 text-xs text-gray-500">출=출석, 지=지각, 결=결석입니다. 지각은 참석 인원에 포함됩니다.</p>
+                </div>
+              </div>
+              <AttendanceMatrix title="학생" rows={memberRows.students} sessions={data?.sessions || []} />
+              <div className="mt-6">
+                <AttendanceMatrix title="교사" rows={memberRows.teachers} sessions={data?.sessions || []} compact />
               </div>
             </section>
 
@@ -223,6 +308,87 @@ export default function AttendanceStatisticsPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function AttendanceMatrix({
+  title,
+  rows,
+  sessions,
+  compact = false,
+}: {
+  title: string;
+  rows: { member: AttendanceMember; recordsBySession: Record<string, AttendanceRecord> }[];
+  sessions: AttendanceSession[];
+  compact?: boolean;
+}) {
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-bold text-gray-800">{title}</h3>
+      <div className="overflow-x-auto rounded-xl border border-white/70">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="bg-gray-50/90 text-xs font-semibold text-gray-500">
+            <tr>
+              <th className="sticky left-0 z-10 bg-gray-50/95 px-4 py-3 text-left">이름</th>
+              {sessions.map((session) => (
+                <th key={session.id} className="px-3 py-3 text-center">
+                  <span className="block whitespace-nowrap">{session.week_label}</span>
+                  <span className="mt-0.5 block whitespace-nowrap font-normal text-gray-400">{session.attendance_date.slice(5)}</span>
+                </th>
+              ))}
+              <th className="px-3 py-3 text-center">참석</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white/65">
+            {rows.map(({ member, recordsBySession }) => {
+              const records = sessions.map((session) => recordsBySession[session.id]).filter(Boolean);
+              const attended = member.member_type === 'teacher'
+                ? countTeacherAttendance(records)
+                : countStudentAttendance(records);
+              return (
+                <tr key={member.id} className={member.is_long_absent ? 'bg-gray-50/80 text-gray-500' : ''}>
+                  <td className="sticky left-0 z-10 bg-inherit px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-gray-900">{member.name}</span>
+                      {!compact && member.grade && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${GRADE_STYLES[member.grade]}`}>{member.grade}학년</span>
+                      )}
+                      {member.is_long_absent && (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">장결</span>
+                      )}
+                    </div>
+                  </td>
+                  {sessions.map((session) => {
+                    const record = recordsBySession[session.id];
+                    return (
+                      <td key={session.id} className="px-3 py-3 text-center">
+                        {record ? (
+                          <span className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${STATUS_STYLES[record.status].className}`}>
+                            {STATUS_SHORT_LABELS[record.status]}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-3 text-center font-bold text-gray-900">
+                    {attended}/{sessions.length}
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={sessions.length + 2} className="px-4 py-8 text-center text-sm text-gray-500">
+                  표시할 {title} 기록이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
