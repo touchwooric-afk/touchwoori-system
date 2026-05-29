@@ -144,8 +144,30 @@ export async function GET(request: NextRequest) {
       pendingTotal = (sumRows || []).reduce((s, r) => s + (r.final_amount || 0), 0);
     }
 
-    // pending 조회 시: 장부 항목 expense 금액과 대조해 중복 플래그 추가
     let enrichedData = data || [];
+
+    if (enrichedData.length > 0) {
+      const serviceClient = createServiceClient();
+      const receiptIds = enrichedData.map((receipt: { id: string }) => receipt.id);
+      const { data: linkedEntries } = await serviceClient
+        .from('ledger_entries')
+        .select('id, receipt_id, ledger_id, date, description, income, expense, ledgers(name, type)')
+        .in('receipt_id', receiptIds)
+        .order('date', { ascending: true });
+
+      const entryMap = new Map<string, unknown>();
+      for (const entry of linkedEntries || []) {
+        const receiptId = (entry as { receipt_id: string | null }).receipt_id;
+        if (receiptId && !entryMap.has(receiptId)) entryMap.set(receiptId, entry);
+      }
+
+      enrichedData = enrichedData.map((receipt: Record<string, unknown>) => ({
+        ...receipt,
+        evidence_entry: entryMap.get(receipt.id as string) || null,
+      }));
+    }
+
+    // pending 조회 시: 장부 항목 expense 금액과 대조해 중복 플래그 추가
     if (status === 'pending' && enrichedData.length > 0) {
       // 부서의 활성 장부 조회
       const { data: ledgers } = await supabase

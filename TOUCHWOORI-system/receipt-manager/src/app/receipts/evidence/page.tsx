@@ -14,12 +14,23 @@ import { useUser } from '@/hooks/useUser';
 import { createClient } from '@/lib/supabase';
 import { compressImage, deleteReceiptImage } from '@/lib/image';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { FileCheck2, Image as ImageIcon, RefreshCw, Search, UploadCloud } from 'lucide-react';
+import { AlertTriangle, FileCheck2, Image as ImageIcon, RefreshCw, Search, UploadCloud } from 'lucide-react';
 import type { ReceiptWithUser, ReceiptStatus } from '@/types';
 
 type FileFilter = 'all' | 'with-file' | 'missing-file';
 type ReceiptListItem = ReceiptWithUser & {
   categories?: { name: string; type: string } | null;
+  evidence_entry?: EvidenceEntry | null;
+};
+type EvidenceEntry = {
+  id: string;
+  receipt_id: string;
+  ledger_id: string;
+  date: string;
+  description: string;
+  income: number;
+  expense: number;
+  ledgers?: { name: string; type: string } | null;
 };
 type LedgerOption = {
   id: string;
@@ -101,15 +112,18 @@ export default function EvidenceManagementPage() {
   const filteredReceipts = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return receipts.filter((receipt) => {
+      const display = getDisplayValues(receipt);
       if (fileFilter === 'with-file' && !receipt.image_url) return false;
       if (fileFilter === 'missing-file' && receipt.image_url) return false;
       if (!keyword) return true;
       return [
         receipt.description,
+        display.description,
         receipt.vendor || '',
         receipt.submitter?.name || '',
         receipt.categories?.name || receipt.category?.name || '',
         String(receipt.final_amount),
+        String(display.amount),
       ].some((value) => value.toLowerCase().includes(keyword));
     });
   }, [fileFilter, receipts, search]);
@@ -320,42 +334,51 @@ export default function EvidenceManagementPage() {
                     <tr>
                       <th className="px-4 py-3 text-left">제출자</th>
                       <th className="px-4 py-3 text-left">사용일</th>
-                      <th className="px-4 py-3 text-left">내용</th>
+                      <th className="px-4 py-3 text-left">장부 항목</th>
                       <th className="px-4 py-3 text-right">금액</th>
                       <th className="px-4 py-3 text-left">상태</th>
                       <th className="px-4 py-3 text-center">첨부</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white/70">
-                    {filteredReceipts.map((receipt) => (
-                      <tr
-                        key={receipt.id}
-                        onClick={() => setSelectedId(receipt.id)}
-                        className={`cursor-pointer transition-colors ${
-                          selectedReceipt?.id === receipt.id ? 'bg-primary-50/80' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <td className="px-4 py-3 font-semibold text-gray-900">{receipt.submitter?.name || '알 수 없음'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-gray-600">{formatDate(receipt.date)}</td>
-                        <td className="px-4 py-3">
-                          <p className="max-w-[260px] truncate font-medium text-gray-900">{receipt.description}</p>
-                          <p className="mt-0.5 text-xs text-gray-500">{receipt.vendor || receipt.categories?.name || receipt.category?.name || '-'}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(receipt.final_amount)}</td>
-                        <td className="px-4 py-3"><StatusBadge status={receipt.status} /></td>
-                        <td className="px-4 py-3 text-center">
-                          {receipt.image_url ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-1 text-xs font-semibold text-success-700">
-                              <ImageIcon className="h-3 w-3" />있음
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-1 text-xs font-semibold text-danger-700">
-                              없음
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredReceipts.map((receipt) => {
+                      const display = getDisplayValues(receipt);
+                      const mismatch = hasReceiptLedgerMismatch(receipt);
+                      return (
+                        <tr
+                          key={receipt.id}
+                          onClick={() => setSelectedId(receipt.id)}
+                          className={`cursor-pointer transition-colors ${
+                            selectedReceipt?.id === receipt.id ? 'bg-primary-50/80' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <td className="px-4 py-3 font-semibold text-gray-900">{receipt.submitter?.name || '알 수 없음'}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-gray-600">{formatDate(display.date)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <p className="max-w-[260px] truncate font-medium text-gray-900">{display.description}</p>
+                              {mismatch && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning-500" />}
+                            </div>
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              {display.ledgerName || receipt.vendor || receipt.categories?.name || receipt.category?.name || '-'}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(display.amount)}</td>
+                          <td className="px-4 py-3"><StatusBadge status={receipt.status} /></td>
+                          <td className="px-4 py-3 text-center">
+                            {receipt.image_url ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-1 text-xs font-semibold text-success-700">
+                                <ImageIcon className="h-3 w-3" />있음
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-1 text-xs font-semibold text-danger-700">
+                                없음
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -366,19 +389,50 @@ export default function EvidenceManagementPage() {
             {selectedReceipt ? (
               <div className="space-y-4">
                 <div>
+                  {(() => {
+                    const display = getDisplayValues(selectedReceipt);
+                    const mismatch = hasReceiptLedgerMismatch(selectedReceipt);
+                    return (
+                      <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold text-gray-500">선택된 지출증빙</p>
-                      <h2 className="mt-1 text-lg font-bold text-gray-900">{selectedReceipt.description}</h2>
+                      <h2 className="mt-1 text-lg font-bold text-gray-900">{display.description}</h2>
+                      {display.ledgerName && (
+                        <p className="mt-0.5 text-xs text-gray-500">{display.ledgerName}</p>
+                      )}
                     </div>
                     <StatusBadge status={selectedReceipt.status} />
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                     <Info label="제출자" value={selectedReceipt.submitter?.name || '알 수 없음'} />
-                    <Info label="사용일" value={formatDate(selectedReceipt.date)} />
-                    <Info label="금액" value={formatCurrency(selectedReceipt.final_amount)} />
+                    <Info label="사용일" value={formatDate(display.date)} />
+                    <Info label="금액" value={formatCurrency(display.amount)} />
                     <Info label="분류" value={selectedReceipt.categories?.name || selectedReceipt.category?.name || '-'} />
                   </div>
+                  {mismatch && (
+                    <div className="mt-3 rounded-xl border border-warning-100 bg-warning-50 px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-warning-700">
+                        <AlertTriangle className="h-4 w-4" />
+                        장부 항목과 제출 영수증 정보가 다릅니다
+                      </div>
+                      <div className="mt-2 grid gap-2 text-xs text-warning-700 sm:grid-cols-2">
+                        <div className="rounded-lg bg-white/70 px-2.5 py-1.5">
+                          <p className="font-semibold">장부 기준</p>
+                          <p className="mt-0.5 truncate">{display.description}</p>
+                          <p>{formatCurrency(display.amount)}</p>
+                        </div>
+                        <div className="rounded-lg bg-white/70 px-2.5 py-1.5">
+                          <p className="font-semibold">제출 원본</p>
+                          <p className="mt-0.5 truncate">{selectedReceipt.description}</p>
+                          <p>{formatCurrency(selectedReceipt.final_amount)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                      </>
+                    );
+                  })()}
                   {selectedReceipt.status === 'rejected' && (
                     <div className="mt-3 rounded-xl border border-danger-100 bg-danger-50 px-3 py-2.5">
                       <p className="text-sm font-semibold text-danger-700">현재 상태가 반려됨입니다</p>
@@ -465,4 +519,23 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="mt-0.5 truncate font-semibold text-gray-900">{value}</p>
     </div>
   );
+}
+
+function getDisplayValues(receipt: ReceiptListItem) {
+  const entry = receipt.evidence_entry;
+  const entryAmount = entry ? (entry.expense || entry.income || 0) : 0;
+  return {
+    date: entry?.date || receipt.date,
+    description: entry?.description || receipt.description,
+    amount: entry ? entryAmount : (receipt.approved_amount ?? receipt.final_amount),
+    ledgerName: entry?.ledgers?.name || null,
+  };
+}
+
+function hasReceiptLedgerMismatch(receipt: ReceiptListItem) {
+  const entry = receipt.evidence_entry;
+  if (!entry) return false;
+  const entryAmount = entry.expense || entry.income || 0;
+  const receiptAmount = receipt.approved_amount ?? receipt.final_amount;
+  return entry.description !== receipt.description || entryAmount !== receiptAmount || entry.date !== receipt.date;
 }
