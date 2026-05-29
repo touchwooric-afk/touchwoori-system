@@ -127,9 +127,9 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
-            TOUCHWOORI
+            고등부 행정관리
           </h1>
-          <p className="mt-2 text-sm text-gray-500">계정 신청</p>
+          <p className="mt-2 text-sm text-gray-500">TOUCHWOORI 계정 신청</p>
         </div>
 
         <div className="glass-popover rounded-2xl p-6">

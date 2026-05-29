@@ -63,7 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               href="/"
               className="text-lg font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
             >
-              {user.department_id?.includes('중등부') ? 'DREAMWOORI' : 'TOUCHWOORI'}
+              {user.department_id?.includes('중등부') ? 'DREAMWOORI 행정관리' : '고등부 행정관리'}
             </Link>
           </div>
 

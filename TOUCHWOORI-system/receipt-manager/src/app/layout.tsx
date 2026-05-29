@@ -5,8 +5,8 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { DepartmentProvider } from '@/contexts/DepartmentContext';
 
 export const metadata: Metadata = {
-  title: 'TOUCHWOORI - 고등부 영수증 관리',
-  description: '교회 고등부 영수증 관리 시스템',
+  title: 'TOUCHWOORI - 고등부 행정관리',
+  description: '교회 고등부 행정관리 시스템',
 };
 
 export default function RootLayout({

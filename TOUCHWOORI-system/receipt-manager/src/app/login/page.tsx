@@ -67,9 +67,9 @@ export default function LoginPage() {
         {/* 로고 */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
-            TOUCHWOORI
+            고등부 행정관리
           </h1>
-          <p className="mt-2 text-sm text-gray-500">고등부 영수증 관리 시스템</p>
+          <p className="mt-2 text-sm text-gray-500">TOUCHWOORI 행정 통합 시스템</p>
         </div>
 
         {/* 로그인 카드 */}

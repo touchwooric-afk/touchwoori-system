@@ -43,7 +43,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
-            TOUCHWOORI
+            고등부 행정관리
           </h1>
         </div>
 
