@@ -39,6 +39,7 @@ export default function EvidenceManagementPage() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [replacing, setReplacing] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const selectedReceipt = receipts.find((receipt) => receipt.id === selectedId) || receipts[0] || null;
 
@@ -91,6 +92,36 @@ export default function EvidenceManagementPage() {
   const handleReplaceClick = () => {
     if (!selectedReceipt) return;
     fileInputRef.current?.click();
+  };
+
+  const handleRestorePending = async () => {
+    if (!selectedReceipt) return;
+    setRestoringId(selectedReceipt.id);
+    try {
+      const res = await fetch(`/api/receipts/${selectedReceipt.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'pending' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      const restored = json.data as ReceiptListItem;
+      setReceipts((prev) => {
+        if (status !== 'all' && status !== restored.status) {
+          return prev.filter((receipt) => receipt.id !== restored.id);
+        }
+        return prev.map((receipt) => (
+          receipt.id === restored.id ? { ...receipt, ...restored } : receipt
+        ));
+      });
+      setSelectedId((current) => (current === restored.id && status !== 'all' ? '' : current));
+      toast.success('반려 상태를 대기중으로 복구했습니다');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '상태 복구에 실패했습니다');
+    } finally {
+      setRestoringId(null);
+    }
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,6 +326,20 @@ export default function EvidenceManagementPage() {
                     <Info label="금액" value={formatCurrency(selectedReceipt.final_amount)} />
                     <Info label="분류" value={selectedReceipt.categories?.name || selectedReceipt.category?.name || '-'} />
                   </div>
+                  {selectedReceipt.status === 'rejected' && (
+                    <div className="mt-3 rounded-xl border border-danger-100 bg-danger-50 px-3 py-2.5">
+                      <p className="text-sm font-semibold text-danger-700">현재 상태가 반려됨입니다</p>
+                      <p className="mt-1 text-xs leading-relaxed text-danger-600">
+                        파일 첨부가 정상이어도, 이전에 반려 처리된 영수증은 반려됨으로 표시됩니다.
+                        잘못 반려된 건이면 아래 버튼으로 대기중 상태로 복구하세요.
+                      </p>
+                      {selectedReceipt.reject_reason && (
+                        <p className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs text-danger-700">
+                          반려 사유: {selectedReceipt.reject_reason}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
@@ -319,8 +364,19 @@ export default function EvidenceManagementPage() {
                   <UploadCloud className="h-4 w-4" />
                   {selectedReceipt.image_url ? '파일 교체' : '파일 첨부'}
                 </Button>
+                {selectedReceipt.status === 'rejected' && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleRestorePending}
+                    loading={restoringId === selectedReceipt.id}
+                    className="w-full"
+                  >
+                    반려 상태를 대기중으로 복구
+                  </Button>
+                )}
                 <p className="text-xs leading-relaxed text-gray-500">
-                  파일만 교체됩니다. 금액, 사용일, 카테고리, 승인 상태는 변경되지 않습니다.
+                  파일 교체는 금액, 사용일, 카테고리를 변경하지 않습니다. 반려 상태는 필요한 경우 별도 버튼으로 대기중 복구만 가능합니다.
                 </p>
               </div>
             ) : (

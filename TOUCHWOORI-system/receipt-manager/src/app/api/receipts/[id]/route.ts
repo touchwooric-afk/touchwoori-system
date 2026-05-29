@@ -108,6 +108,7 @@ export async function PATCH(
       'date', 'description', 'final_amount', 'category_id',
       'image_url', 'vendor', 'subtotal', 'discount',
       'delivery_fee', 'memo', 'ocr_raw', 'pdf_crop',
+      'status',
     ];
 
     const updateData: Record<string, unknown> = {};
@@ -120,6 +121,24 @@ export async function PATCH(
 
     if (Object.keys(updateData).length <= 1) {
       return NextResponse.json({ error: '수정할 항목이 없습니다' }, { status: 400 });
+    }
+
+    if (updateData.status !== undefined) {
+      if (profile.role !== 'master' && profile.role !== 'accountant') {
+        return NextResponse.json({ error: '상태 수정 권한이 없습니다' }, { status: 403 });
+      }
+
+      if (updateData.status !== 'pending') {
+        return NextResponse.json({ error: '이 화면에서는 반려된 영수증을 대기중으로 복구하는 것만 가능합니다' }, { status: 400 });
+      }
+
+      if (receipt.status !== 'rejected') {
+        return NextResponse.json({ error: '반려된 영수증만 대기중으로 복구할 수 있습니다' }, { status: 400 });
+      }
+
+      updateData.reviewed_by = null;
+      updateData.reviewed_at = null;
+      updateData.reject_reason = null;
     }
 
     // 유효성 검사
