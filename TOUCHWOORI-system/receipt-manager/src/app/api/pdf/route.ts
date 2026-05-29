@@ -3,6 +3,30 @@ export const runtime = 'edge';
 import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const PDF_QUERY_PAGE_SIZE = 1000;
+
+async function fetchAllRows<T>(
+  buildQuery: () => any,
+  label: string
+): Promise<{ data: T[]; error: string | null }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PDF_QUERY_PAGE_SIZE) {
+    const to = from + PDF_QUERY_PAGE_SIZE - 1;
+    const { data, error } = await buildQuery().range(from, to);
+
+    if (error) {
+      return { data: rows, error: `${label} 조회에 실패했습니다: ${error.message}` };
+    }
+
+    const page = (data || []) as T[];
+    rows.push(...page);
+
+    if (page.length < PDF_QUERY_PAGE_SIZE) {
+      return { data: rows, error: null };
+    }
+  }
+}
+
 // POST: 정산서 PDF 데이터 생성 (PDF 렌더링은 클라이언트에서 @react-pdf/renderer로 처리)
 export async function POST(request: NextRequest) {
   try {
@@ -96,39 +120,50 @@ export async function POST(request: NextRequest) {
       ledgerIds = (deptLedgers || []).map((l) => l.id);
     }
 
-    // 이월 잔액: startDate 이전의 모든 항목 합산 (수입 - 지출)
-    let priorQuery = serviceClient
-      .from('ledger_entries')
-      .select('income, expense')
-      .lt('date', startDate);
+    const buildPriorQuery = () => {
+      let query = serviceClient
+        .from('ledger_entries')
+        .select('income, expense')
+        .lt('date', startDate)
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true });
 
-    priorQuery = targetLedgerType === 'main'
-      ? priorQuery.in('ledger_id', ledgerIds)
-      : priorQuery.eq('ledger_id', targetLedgerId);
+      return targetLedgerType === 'main'
+        ? query.in('ledger_id', ledgerIds)
+        : query.eq('ledger_id', targetLedgerId);
+    };
 
-    const { data: priorEntries } = await priorQuery;
+    const { data: priorEntries, error: priorError } = await fetchAllRows<{
+      income: number | null;
+      expense: number | null;
+    }>(buildPriorQuery, '이월 장부 항목');
+
+    if (priorError) {
+      return NextResponse.json({ error: priorError }, { status: 500 });
+    }
 
     const carryoverBalance = (priorEntries || []).reduce(
       (sum, e) => sum + (e.income || 0) - (e.expense || 0), 0
     );
 
-    // 기간 내 전체 항목 조회 (수입 + 지출 모두)
-    let entriesQuery = serviceClient
-      .from('ledger_entries')
-      .select('*, categories(*), receipts!receipt_id(id, image_url)')
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true })
-      .order('created_at', { ascending: true });
+    const buildEntriesQuery = () => {
+      let query = serviceClient
+        .from('ledger_entries')
+        .select('*, categories(*), receipts!receipt_id(id, image_url)')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true });
 
-    entriesQuery = targetLedgerType === 'main'
-      ? entriesQuery.in('ledger_id', ledgerIds)
-      : entriesQuery.eq('ledger_id', targetLedgerId);
+      return targetLedgerType === 'main'
+        ? query.in('ledger_id', ledgerIds)
+        : query.eq('ledger_id', targetLedgerId);
+    };
 
-    const { data: allEntries, error } = await entriesQuery;
+    const { data: allEntries, error } = await fetchAllRows<any>(buildEntriesQuery, '기간 내 장부 항목');
 
     if (error) {
-      return NextResponse.json({ error: `데이터 조회에 실패했습니다: ${error.message}` }, { status: 500 });
+      return NextResponse.json({ error }, { status: 500 });
     }
 
     // 카테고리별 수입/지출 합계 집계
