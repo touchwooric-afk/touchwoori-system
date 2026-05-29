@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const ledgerId = searchParams.get('ledger_id');
+    const sort = searchParams.get('sort');
+    const direction = searchParams.get('direction') === 'desc' ? 'desc' : 'asc';
     const offset = (page - 1) * pageSize;
 
     let query = supabase
@@ -59,9 +62,58 @@ export async function GET(request: NextRequest) {
       query = query.lte('date', endDate);
     }
 
-    query = query
-      .order('created_at', { ascending: false })
-      .range(offset, offset + pageSize - 1);
+    if (ledgerId) {
+      const { data: ledger } = await supabase
+        .from('ledgers')
+        .select('id, department_id, type')
+        .eq('id', ledgerId)
+        .single();
+
+      if (!ledger) {
+        return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+      }
+
+      if (profile.role === 'accountant' && ledger.department_id !== profile.department_id) {
+        return NextResponse.json({ error: '같은 부서의 장부만 조회할 수 있습니다' }, { status: 403 });
+      }
+
+      let ledgerIds = [ledgerId];
+      if (ledger.type === 'main') {
+        const { data: deptLedgers } = await supabase
+          .from('ledgers')
+          .select('id')
+          .eq('department_id', ledger.department_id)
+          .eq('is_active', true);
+        ledgerIds = (deptLedgers || []).map((item: { id: string }) => item.id);
+      }
+
+      const serviceClient = createServiceClient();
+      const { data: linkedEntries, error: linkedError } = await serviceClient
+        .from('ledger_entries')
+        .select('receipt_id')
+        .in('ledger_id', ledgerIds)
+        .not('receipt_id', 'is', null);
+
+      if (linkedError) {
+        return NextResponse.json({ error: `장부별 영수증 조회에 실패했습니다: ${linkedError.message}` }, { status: 500 });
+      }
+
+      const receiptIds = Array.from(new Set((linkedEntries || []).map((entry: { receipt_id: string | null }) => entry.receipt_id).filter(Boolean))) as string[];
+      if (receiptIds.length === 0) {
+        return NextResponse.json({ data: [], total: 0, page, pageSize, pendingTotal: 0 });
+      }
+      query = query.in('id', receiptIds);
+    }
+
+    if (sort === 'date') {
+      query = query
+        .order('date', { ascending: direction === 'asc' })
+        .order('created_at', { ascending: false });
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    query = query.range(offset, offset + pageSize - 1);
 
     const { data, error, count } = await query;
 

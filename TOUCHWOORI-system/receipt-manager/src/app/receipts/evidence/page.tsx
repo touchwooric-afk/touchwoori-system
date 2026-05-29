@@ -21,6 +21,12 @@ type FileFilter = 'all' | 'with-file' | 'missing-file';
 type ReceiptListItem = ReceiptWithUser & {
   categories?: { name: string; type: string } | null;
 };
+type LedgerOption = {
+  id: string;
+  name: string;
+  type: string;
+  is_active?: boolean;
+};
 
 const PAGE_SIZE = 20;
 
@@ -36,6 +42,9 @@ export default function EvidenceManagementPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'all' | ReceiptStatus>('all');
   const [fileFilter, setFileFilter] = useState<FileFilter>('all');
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [ledgerId, setLedgerId] = useState('all');
+  const [ledgers, setLedgers] = useState<LedgerOption[]>([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [replacing, setReplacing] = useState(false);
@@ -51,8 +60,13 @@ export default function EvidenceManagementPage() {
         page: String(page),
         pageSize: String(PAGE_SIZE),
         department_id: activeDept,
+        startDate: `${year}-01-01`,
+        endDate: `${year}-12-31`,
+        sort: 'date',
+        direction: 'asc',
       });
       if (status !== 'all') params.set('status', status);
+      if (ledgerId !== 'all') params.set('ledger_id', ledgerId);
 
       const res = await fetch(`/api/receipts?${params}`);
       const json = await res.json();
@@ -67,11 +81,22 @@ export default function EvidenceManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeDept, page, status, toast]);
+  }, [activeDept, ledgerId, page, status, toast, year]);
 
   useEffect(() => {
     loadReceipts();
   }, [loadReceipts]);
+
+  useEffect(() => {
+    if (!activeDept) return;
+    fetch(`/api/ledgers?department_id=${encodeURIComponent(activeDept)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        const rows = (json.data || []) as LedgerOption[];
+        setLedgers(rows.filter((ledger) => ledger.is_active !== false && ledger.type !== 'main'));
+      })
+      .catch(() => setLedgers([]));
+  }, [activeDept]);
 
   const filteredReceipts = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -138,7 +163,7 @@ export default function EvidenceManagementPage() {
     const previousImageUrl = selectedReceipt.image_url;
     try {
       const compressed = await compressImage(file);
-      const path = `receipts/${selectedReceipt.department_id}/${user.id}/${selectedReceipt.id}_evidence_${Date.now()}.jpg`;
+      const path = `${user.id}/${selectedReceipt.id}_evidence_${Date.now()}.jpg`;
       const { error: uploadError } = await supabase.storage.from('receipts').upload(path, compressed, {
         contentType: 'image/jpeg',
         upsert: false,
@@ -209,7 +234,7 @@ export default function EvidenceManagementPage() {
         </div>
 
         <div className="glass-panel rounded-2xl p-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
@@ -219,6 +244,31 @@ export default function EvidenceManagementPage() {
                 className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
               />
             </div>
+            <select
+              value={year}
+              onChange={(event) => {
+                setYear(event.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              {Array.from({ length: 6 }, (_, index) => String(new Date().getFullYear() - index)).map((yearOption) => (
+                <option key={yearOption} value={yearOption}>{yearOption}년</option>
+              ))}
+            </select>
+            <select
+              value={ledgerId}
+              onChange={(event) => {
+                setLedgerId(event.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="all">전체 장부</option>
+              {ledgers.map((ledger) => (
+                <option key={ledger.id} value={ledger.id}>{ledger.name}</option>
+              ))}
+            </select>
             <select
               value={status}
               onChange={(event) => {
@@ -242,6 +292,9 @@ export default function EvidenceManagementPage() {
               <option value="missing-file">첨부 없음</option>
             </select>
           </div>
+          <p className="mt-3 text-xs text-gray-500">
+            사용일 기준 오름차순으로 정렬됩니다. 장부별 조회는 장부 항목과 연결된 영수증만 표시합니다.
+          </p>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
