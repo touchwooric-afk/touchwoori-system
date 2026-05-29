@@ -137,12 +137,14 @@ export async function POST(request: NextRequest) {
 
     const incomeItems: Array<{ date: string; description: string; amount: number; categoryName: string }> = [];
     const expenseItems: Array<{ date: string; description: string; amount: number; categoryName: string; imageUrl: string | null }> = [];
+    const linkedReceiptIds = new Set<string>();
 
     let totalIncome = 0;
     let totalExpense = 0;
 
     for (const entry of allEntries || []) {
       const categoryName = entry.categories?.name || '미분류';
+      if (entry.receipt_id) linkedReceiptIds.add(entry.receipt_id);
 
       if ((entry.income || 0) > 0) {
         totalIncome += entry.income;
@@ -177,6 +179,34 @@ export async function POST(request: NextRequest) {
     const incomeSummary = Array.from(incomeCatMap.values()).sort((a, b) => b.total - a.total);
     const expenseSummary = Array.from(expenseCatMap.values()).sort((a, b) => b.total - a.total);
     const endingBalance = carryoverBalance + totalIncome - totalExpense;
+    let unlinkedApprovedReceipts: Array<{
+      id: string;
+      date: string;
+      description: string;
+      amount: number;
+      imageUrl: string | null;
+    }> = [];
+
+    if (targetLedgerType === 'main') {
+      const { data: approvedReceipts } = await serviceClient
+        .from('receipts')
+        .select('id, date, description, final_amount, approved_amount, image_url')
+        .eq('department_id', targetDepartmentId)
+        .eq('status', 'approved')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+
+      unlinkedApprovedReceipts = (approvedReceipts || [])
+        .filter((receipt) => !linkedReceiptIds.has(receipt.id))
+        .map((receipt) => ({
+          id: receipt.id,
+          date: receipt.date,
+          description: receipt.description,
+          amount: receipt.approved_amount ?? receipt.final_amount,
+          imageUrl: receipt.image_url || null,
+        }));
+    }
 
     return NextResponse.json({
       data: {
@@ -190,6 +220,10 @@ export async function POST(request: NextRequest) {
         expenseSummary,
         incomeItems,
         expenseItems,
+        diagnostics: {
+          unlinkedApprovedReceipts,
+          expenseItemsWithoutImage: expenseItems.filter((item) => !item.imageUrl).length,
+        },
       },
     });
   } catch (err) {

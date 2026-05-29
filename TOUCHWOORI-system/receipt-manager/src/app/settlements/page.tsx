@@ -75,6 +75,16 @@ interface PdfData {
   expenseSummary: CatSummary[];
   incomeItems: IncomeItem[];
   expenseItems: ExpenseItem[];
+  diagnostics?: {
+    unlinkedApprovedReceipts: Array<{
+      id: string;
+      date: string;
+      description: string;
+      amount: number;
+      imageUrl: string | null;
+    }>;
+    expenseItemsWithoutImage: number;
+  };
 }
 
 export default function SettlementsPage() {
@@ -110,6 +120,7 @@ export default function SettlementsPage() {
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
 
   // Fetch ledgers
   const fetchData = useCallback(async () => {
@@ -184,6 +195,7 @@ export default function SettlementsPage() {
     }
     setPreviewLoading(true);
     setPdfData(null);
+    clearPdfPreview();
     try {
       const body: Record<string, string> = { startDate: dates.start, endDate: dates.end };
       if (selectedLedger) body.ledgerId = selectedLedger;
@@ -203,21 +215,104 @@ export default function SettlementsPage() {
     }
   };
 
+  const clearPdfPreview = () => {
+    setPdfPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  };
+
+  useEffect(() => () => {
+    setPdfPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  }, []);
+
   // 이미지를 canvas로 로드해 PDF 친화적인 JPEG dataURL로 변환합니다.
   // 세로가 긴 모바일 캡처는 한 칸에 넣으면 너무 작아져서 여러 조각으로 분할합니다.
   const normalizeImage = (url: string): Promise<string[]> => {
     const MAX_W = 1600;
-    const MAX_DIM = 1800;
+    const MAX_DIM = 2200;
+    const MIN_SHORT_SIDE = 900;
     const PDF_CELL_RATIO = 1.32; // 영수증 PDF 셀의 대략적인 세로/가로 비율
     const TALL_RATIO = 2.4;
+    const SAMPLE_STEP = 8;
+    const BACKGROUND_THRESHOLD = 242;
+    const CONTRAST_THRESHOLD = 18;
+
+    const detectContentBounds = (
+      ctx: CanvasRenderingContext2D,
+      width: number,
+      height: number
+    ) => {
+      const pixels = ctx.getImageData(0, 0, width, height).data;
+      let minX = width;
+      let minY = height;
+      let maxX = -1;
+      let maxY = -1;
+
+      for (let y = 0; y < height; y += SAMPLE_STEP) {
+        for (let x = 0; x < width; x += SAMPLE_STEP) {
+          const idx = (y * width + x) * 4;
+          const r = pixels[idx];
+          const g = pixels[idx + 1];
+          const b = pixels[idx + 2];
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const isBackground = r > BACKGROUND_THRESHOLD && g > BACKGROUND_THRESHOLD && b > BACKGROUND_THRESHOLD;
+          const hasContent = !isBackground || (max - min) > CONTRAST_THRESHOLD;
+          if (hasContent) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+
+      if (maxX < 0 || maxY < 0) {
+        return { x: 0, y: 0, width, height };
+      }
+
+      const pad = Math.max(12, Math.round(Math.min(width, height) * 0.025));
+      const x = Math.max(0, minX - pad);
+      const y = Math.max(0, minY - pad);
+      const right = Math.min(width, maxX + pad);
+      const bottom = Math.min(height, maxY + pad);
+      const cropW = right - x;
+      const cropH = bottom - y;
+
+      // 거의 전체 이미지라면 원본 유지. 과도한 오탐을 피하기 위한 안전장치입니다.
+      if ((cropW * cropH) / (width * height) > 0.88) {
+        return { x: 0, y: 0, width, height };
+      }
+
+      return { x, y, width: cropW, height: cropH };
+    };
 
     return new Promise((resolve) => {
       const img = new window.Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         try {
-          const sourceW = img.naturalWidth;
-          const sourceH = img.naturalHeight;
+          const rawW = img.naturalWidth;
+          const rawH = img.naturalHeight;
+          const probe = document.createElement('canvas');
+          probe.width = rawW;
+          probe.height = rawH;
+          const probeCtx = probe.getContext('2d');
+          if (!probeCtx) {
+            resolve([url]);
+            return;
+          }
+          probeCtx.fillStyle = '#ffffff';
+          probeCtx.fillRect(0, 0, rawW, rawH);
+          probeCtx.drawImage(img, 0, 0, rawW, rawH);
+
+          const crop = detectContentBounds(probeCtx, rawW, rawH);
+          const sourceW = crop.width;
+          const sourceH = crop.height;
           const sourceRatio = sourceH / sourceW;
           const sliceCount = sourceRatio > TALL_RATIO
             ? Math.ceil(sourceRatio / PDF_CELL_RATIO)
@@ -230,9 +325,11 @@ export default function SettlementsPage() {
               ? sourceH
               : Math.round((sourceH / sliceCount) * (i + 1));
             const sliceH = nextSy - sy;
+            const shortSide = Math.min(sourceW, sliceH);
+            const upscale = shortSide < MIN_SHORT_SIDE ? MIN_SHORT_SIDE / shortSide : 1;
             const scale = sliceCount > 1
-              ? Math.min(MAX_W / sourceW, 1)
-              : Math.min(MAX_DIM / sourceW, MAX_DIM / sourceH, 1);
+              ? Math.min(MAX_W / sourceW, upscale)
+              : Math.min(MAX_DIM / sourceW, MAX_DIM / sliceH, upscale);
 
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(sourceW * scale));
@@ -242,7 +339,19 @@ export default function SettlementsPage() {
 
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, sy, sourceW, sliceH, 0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(
+              probe,
+              crop.x,
+              crop.y + sy,
+              sourceW,
+              sliceH,
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
             urls.push(canvas.toDataURL('image/jpeg', 0.82));
           }
 
@@ -256,20 +365,17 @@ export default function SettlementsPage() {
     });
   };
 
-  // PDF download
-  const handleDownload = async () => {
-    if (!pdfData || (pdfData.expenseItems.length === 0 && pdfData.incomeItems.length === 0)) return;
-    setDownloadLoading(true);
-    try {
+  const createPdfBlob = async () => {
+    if (!pdfData || (pdfData.expenseItems.length === 0 && pdfData.incomeItems.length === 0)) return null;
       // 이미지 EXIF 방향 보정을 위한 전처리
       const imageUrls = pdfData.expenseItems.map((item) => item.imageUrl).filter(Boolean) as string[];
       const normalizedMap = new Map<string, string[]>();
       if (imageUrls.length > 0) {
-        const results = await Promise.all(imageUrls.map(async (url) => {
+        const uniqueUrls = Array.from(new Set(imageUrls));
+        for (const url of uniqueUrls) {
           const dataUrls = await normalizeImage(url);
-          return [url, dataUrls] as const;
-        }));
-        for (const [orig, data] of results) normalizedMap.set(orig, data);
+          normalizedMap.set(url, dataUrls);
+        }
       }
 
       const {
@@ -459,7 +565,31 @@ export default function SettlementsPage() {
         </Document>
       );
 
-      const blob = await pdf(PdfDoc).toBlob();
+      return pdf(PdfDoc).toBlob();
+  };
+
+  const handlePdfPreview = async () => {
+    setDownloadLoading(true);
+    clearPdfPreview();
+    try {
+      const blob = await createPdfBlob();
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewUrl(url);
+      toast.success('보정된 PDF 미리보기를 만들었습니다');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'PDF 미리보기 생성에 실패했습니다');
+    } finally {
+      setDownloadLoading(false);
+    }
+  };
+
+  // PDF download
+  const handleDownload = async () => {
+    setDownloadLoading(true);
+    try {
+      const blob = await createPdfBlob();
+      if (!blob || !pdfData) return;
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
@@ -613,17 +743,27 @@ export default function SettlementsPage() {
             <div className="flex gap-3 pt-2">
               <Button onClick={handlePreview} loading={previewLoading}>
                 <Eye className="h-4 w-4" />
-                PDF 미리보기
+                결산 조회
               </Button>
               {pdfData && (pdfData.expenseItems.length > 0 || pdfData.incomeItems.length > 0) && (
-                <Button
-                  variant="secondary"
-                  onClick={handleDownload}
-                  loading={downloadLoading}
-                >
-                  <Download className="h-4 w-4" />
-                  PDF 다운로드
-                </Button>
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={handlePdfPreview}
+                    loading={downloadLoading}
+                  >
+                    <Eye className="h-4 w-4" />
+                    보정 PDF 미리보기
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={handleDownload}
+                    loading={downloadLoading}
+                  >
+                    <Download className="h-4 w-4" />
+                    PDF 다운로드
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -725,10 +865,40 @@ export default function SettlementsPage() {
                   </div>
                 </div>
 
+                {(pdfData.diagnostics?.unlinkedApprovedReceipts.length || 0) > 0 && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    <h3 className="font-semibold text-red-900">결산 출력에서 빠질 수 있는 승인 영수증</h3>
+                    <p className="mt-1">
+                      아래 항목은 승인된 영수증이지만 장부 항목과 연결되어 있지 않습니다. 결산 PDF는 장부 기준으로 생성되므로 이 항목들은 출력 대상에서 제외됩니다.
+                    </p>
+                    <div className="mt-3 divide-y divide-red-100 rounded-lg bg-white/70">
+                      {pdfData.diagnostics?.unlinkedApprovedReceipts.slice(0, 8).map((receipt) => (
+                        <div key={receipt.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-red-950">{receipt.description}</p>
+                            <p className="text-xs text-red-700">{formatDateShort(receipt.date)}</p>
+                          </div>
+                          <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(receipt.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {(pdfData.diagnostics?.unlinkedApprovedReceipts.length || 0) > 8 && (
+                      <p className="mt-2 text-xs">
+                        외 {pdfData.diagnostics!.unlinkedApprovedReceipts.length - 8}건 더 있습니다. 지출증빙 관리에서 장부 연결 상태를 확인해주세요.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* 지출 항목 영수증 그리드 */}
                 {pdfData.expenseItems.length > 0 && (
                   <div>
                     <h3 className="text-base font-semibold text-gray-800 mb-3">지출 영수증 ({pdfData.expenseItems.length}건)</h3>
+                    {pdfData.expenseItems.some((item) => !item.imageUrl) && (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        증빙 파일이 연결되지 않은 지출 항목이 있습니다. PDF에는 해당 칸이 “이미지 없음”으로 표시됩니다.
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {pdfData.expenseItems.map((item, i) => (
                         <div key={i} className="glass-panel rounded-xl overflow-hidden">
@@ -751,6 +921,28 @@ export default function SettlementsPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {pdfPreviewUrl && (
+                  <div className="glass-panel rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900">보정 PDF 미리보기</h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          작은 캡처는 여백을 자동으로 줄이고 확대 보정한 뒤 PDF에 넣습니다.
+                        </p>
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={handleDownload} loading={downloadLoading}>
+                        <Download className="h-4 w-4" />
+                        이대로 다운로드
+                      </Button>
+                    </div>
+                    <iframe
+                      src={pdfPreviewUrl}
+                      title="보정 PDF 미리보기"
+                      className="h-[75vh] w-full bg-gray-100"
+                    />
                   </div>
                 )}
               </>
