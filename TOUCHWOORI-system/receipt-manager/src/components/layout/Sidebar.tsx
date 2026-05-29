@@ -106,6 +106,7 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
         ...(canWrite
           ? [
               { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList, badge: pendingCount },
+              { label: '지출증빙 관리', href: '/receipts/evidence', icon: FileText },
               { label: '직접 입력', href: '/receipts/new', icon: PlusCircle },
             ]
           : []),
