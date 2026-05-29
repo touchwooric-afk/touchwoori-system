@@ -82,6 +82,9 @@ interface PdfData {
       description: string;
       amount: number;
       imageUrl: string | null;
+      reason: string;
+      linkedEntryDate: string | null;
+      linkedLedgerName: string | null;
     }>;
     expenseItemsWithoutImage: number;
   };
@@ -867,16 +870,20 @@ export default function SettlementsPage() {
 
                 {(pdfData.diagnostics?.unlinkedApprovedReceipts.length || 0) > 0 && (
                   <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                    <h3 className="font-semibold text-red-900">결산 출력에서 빠질 수 있는 승인 영수증</h3>
+                    <h3 className="font-semibold text-red-900">이번 결산 PDF에 포함되지 않는 승인 영수증</h3>
                     <p className="mt-1">
-                      아래 항목은 승인된 영수증이지만 장부 항목과 연결되어 있지 않습니다. 결산 PDF는 장부 기준으로 생성되므로 이 항목들은 출력 대상에서 제외됩니다.
+                      결산 PDF는 영수증 제출일이 아니라 장부 항목의 날짜와 장부 범위 기준으로 생성됩니다. 아래 항목은 승인 영수증 날짜는 기간 안에 있지만, 이번 PDF 범위의 장부 항목으로는 잡히지 않은 항목입니다.
                     </p>
                     <div className="mt-3 divide-y divide-red-100 rounded-lg bg-white/70">
                       {pdfData.diagnostics?.unlinkedApprovedReceipts.slice(0, 8).map((receipt) => (
                         <div key={receipt.id} className="flex items-center justify-between gap-3 px-3 py-2">
                           <div className="min-w-0">
                             <p className="truncate font-medium text-red-950">{receipt.description}</p>
-                            <p className="text-xs text-red-700">{formatDateShort(receipt.date)}</p>
+                            <p className="text-xs text-red-700">
+                              영수증일 {formatDateShort(receipt.date)} · {receipt.reason}
+                              {receipt.linkedEntryDate ? ` · 장부일 ${formatDateShort(receipt.linkedEntryDate)}` : ''}
+                              {receipt.linkedLedgerName ? ` · ${receipt.linkedLedgerName}` : ''}
+                            </p>
                           </div>
                           <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(receipt.amount)}</span>
                         </div>
@@ -884,7 +891,7 @@ export default function SettlementsPage() {
                     </div>
                     {(pdfData.diagnostics?.unlinkedApprovedReceipts.length || 0) > 8 && (
                       <p className="mt-2 text-xs">
-                        외 {pdfData.diagnostics!.unlinkedApprovedReceipts.length - 8}건 더 있습니다. 지출증빙 관리에서 장부 연결 상태를 확인해주세요.
+                        외 {pdfData.diagnostics!.unlinkedApprovedReceipts.length - 8}건 더 있습니다. 사유가 “장부 항목 연결 없음”인 경우 지출증빙 관리에서 장부 연결 상태를 확인해주세요.
                       </p>
                     )}
                   </div>
