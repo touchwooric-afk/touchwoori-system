@@ -172,14 +172,12 @@ export async function POST(request: NextRequest) {
 
     const incomeItems: Array<{ date: string; description: string; amount: number; categoryName: string }> = [];
     const expenseItems: Array<{ date: string; description: string; amount: number; categoryName: string; imageUrl: string | null }> = [];
-    const linkedReceiptIds = new Set<string>();
 
     let totalIncome = 0;
     let totalExpense = 0;
 
     for (const entry of allEntries || []) {
       const categoryName = entry.categories?.name || '미분류';
-      if (entry.receipt_id) linkedReceiptIds.add(entry.receipt_id);
 
       if ((entry.income || 0) > 0) {
         totalIncome += entry.income;
@@ -214,97 +212,6 @@ export async function POST(request: NextRequest) {
     const incomeSummary = Array.from(incomeCatMap.values()).sort((a, b) => b.total - a.total);
     const expenseSummary = Array.from(expenseCatMap.values()).sort((a, b) => b.total - a.total);
     const endingBalance = carryoverBalance + totalIncome - totalExpense;
-    let unlinkedApprovedReceipts: Array<{
-      id: string;
-      date: string;
-      description: string;
-      amount: number;
-      imageUrl: string | null;
-      reason: string;
-      linkedEntryDate: string | null;
-      linkedLedgerName: string | null;
-    }> = [];
-
-    if (targetLedgerType === 'main') {
-      const { data: approvedReceipts } = await serviceClient
-        .from('receipts')
-        .select('id, date, description, final_amount, approved_amount, image_url')
-        .eq('department_id', targetDepartmentId)
-        .eq('status', 'approved')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: true });
-
-      const approvedReceiptIds = (approvedReceipts || []).map((receipt) => receipt.id);
-      const linkedEntriesByReceipt = new Map<string, Array<{
-        receipt_id: string;
-        ledger_id: string;
-        date: string;
-        ledgers?: { name?: string | null; is_active?: boolean | null } | null;
-      }>>();
-
-      if (approvedReceiptIds.length > 0) {
-        const { data: linkedEntries } = await serviceClient
-          .from('ledger_entries')
-          .select('receipt_id, ledger_id, date, ledgers(name, is_active)')
-          .in('receipt_id', approvedReceiptIds);
-
-        for (const rawEntry of linkedEntries || []) {
-          const entry = rawEntry as {
-            receipt_id: string | null;
-            ledger_id: string;
-            date: string;
-            ledgers?: { name?: string | null; is_active?: boolean | null } | Array<{ name?: string | null; is_active?: boolean | null }> | null;
-          };
-          if (!entry.receipt_id) continue;
-          const ledger = Array.isArray(entry.ledgers) ? entry.ledgers[0] : entry.ledgers;
-          const list = linkedEntriesByReceipt.get(entry.receipt_id) || [];
-          list.push({
-            receipt_id: entry.receipt_id,
-            ledger_id: entry.ledger_id,
-            date: entry.date,
-            ledgers: ledger || null,
-          });
-          linkedEntriesByReceipt.set(entry.receipt_id, list);
-        }
-      }
-
-      unlinkedApprovedReceipts = (approvedReceipts || [])
-        .map((receipt) => {
-          const entries = linkedEntriesByReceipt.get(receipt.id) || [];
-          const printableEntry = entries.find((entry) => (
-            ledgerIds.includes(entry.ledger_id)
-            && entry.date >= startDate
-            && entry.date <= endDate
-          ));
-
-          if (printableEntry || linkedReceiptIds.has(receipt.id)) return null;
-
-          const sameLedgerEntry = entries.find((entry) => ledgerIds.includes(entry.ledger_id));
-          const firstEntry = sameLedgerEntry || entries[0] || null;
-          let reason = '장부 항목 연결 없음';
-
-          if (sameLedgerEntry) {
-            reason = '장부일이 결산 기간 밖';
-          } else if (firstEntry) {
-            reason = firstEntry.ledgers?.is_active === false
-              ? '비활성 장부에 연결됨'
-              : '다른 장부에 연결됨';
-          }
-
-          return {
-            id: receipt.id,
-            date: receipt.date,
-            description: receipt.description,
-            amount: receipt.approved_amount ?? receipt.final_amount,
-            imageUrl: receipt.image_url || null,
-            reason,
-            linkedEntryDate: firstEntry?.date || null,
-            linkedLedgerName: firstEntry?.ledgers?.name || null,
-          };
-        })
-        .filter(Boolean) as typeof unlinkedApprovedReceipts;
-    }
 
     return NextResponse.json({
       data: {
@@ -318,10 +225,6 @@ export async function POST(request: NextRequest) {
         expenseSummary,
         incomeItems,
         expenseItems,
-        diagnostics: {
-          unlinkedApprovedReceipts,
-          expenseItemsWithoutImage: expenseItems.filter((item) => !item.imageUrl).length,
-        },
       },
     });
   } catch (err) {
