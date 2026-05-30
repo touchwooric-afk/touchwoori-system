@@ -173,7 +173,11 @@ export default function UsersPage() {
       const res = await fetch(`/api/users?id=${u.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      toast.success(`${u.name}님의 계정이 삭제되었습니다`);
+      toast.success(
+        json.data?.hardDeleted === false
+          ? `${u.name}님의 계정 로그인을 차단하고 비활성화했습니다`
+          : `${u.name}님의 계정이 삭제되었습니다`
+      );
       setDeleteDialog({ open: false, user: null });
       fetchUsers();
     } catch (err) {
@@ -567,7 +571,7 @@ export default function UsersPage() {
       <ConfirmDialog
         isOpen={deleteDialog.open}
         title="사용자 삭제"
-        message={`${deleteDialog.user?.name}님의 계정을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        message={`${deleteDialog.user?.name}님의 계정을 삭제하시겠습니까? 장부/영수증/출석 기록이 남아 있으면 기록 보존을 위해 계정은 비활성화되고 로그인만 차단됩니다.`}
         confirmText="삭제"
         variant="danger"
         loading={submitting}

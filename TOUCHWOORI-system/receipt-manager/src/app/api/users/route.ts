@@ -184,8 +184,67 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '자기 자신은 삭제할 수 없습니다' }, { status: 403 });
     }
 
-    // users 테이블에서 삭제
-    const { error: deleteError } = await supabase
+    const serviceClient = createServiceClient();
+    const blockingChecks = [
+      { table: 'receipts', column: 'submitted_by' },
+      { table: 'ledgers', column: 'created_by' },
+      { table: 'ledger_entries', column: 'created_by' },
+      { table: 'settlements', column: 'created_by' },
+      { table: 'excel_syncs', column: 'created_by' },
+      { table: 'attendance_sessions', column: 'created_by' },
+    ];
+
+    let blockingCount = 0;
+    for (const check of blockingChecks) {
+      const { count, error } = await serviceClient
+        .from(check.table)
+        .select('id', { count: 'exact', head: true })
+        .eq(check.column, id);
+
+      if (error) {
+        return NextResponse.json({ error: `사용자 기록 확인 실패: ${error.message}` }, { status: 500 });
+      }
+
+      blockingCount += count || 0;
+    }
+
+    if (blockingCount > 0) {
+      await serviceClient.auth.admin.updateUserById(id, {
+        ban_duration: '876000h',
+      } as any);
+
+      const { data, error } = await serviceClient
+        .from('users')
+        .update({ status: 'inactive' })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: `사용자 비활성화 실패: ${error.message}` }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        data: {
+          message: '회계/출석 기록 보존을 위해 계정을 비활성화하고 로그인을 차단했습니다',
+          hardDeleted: false,
+          user: data,
+        },
+      });
+    }
+
+    await serviceClient
+      .from('receipts')
+      .update({ reviewed_by: null })
+      .eq('reviewed_by', id);
+
+    await serviceClient
+      .from('attendance_records')
+      .update({ checked_by: null })
+      .eq('checked_by', id);
+
+    // users 테이블에서 삭제. 기록이 없는 계정만 여기까지 오므로 실제 삭제 가능.
+    const { error: deleteError } = await serviceClient
       .from('users')
       .delete()
       .eq('id', id);
@@ -195,10 +254,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Supabase Auth에서도 삭제 (service client 필요)
-    const serviceClient = createServiceClient();
-    await serviceClient.auth.admin.deleteUser(id);
+    const { error: authDeleteError } = await serviceClient.auth.admin.deleteUser(id);
 
-    return NextResponse.json({ data: { message: '사용자가 삭제되었습니다' } });
+    if (authDeleteError) {
+      return NextResponse.json({ error: `인증 계정 삭제 실패: ${authDeleteError.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({ data: { message: '사용자가 삭제되었습니다', hardDeleted: true } });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `서버 오류: ${detail}` }, { status: 500 });
