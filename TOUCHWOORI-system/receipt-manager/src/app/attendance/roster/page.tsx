@@ -199,6 +199,17 @@ export default function AttendanceRosterPage() {
           </div>
         </div>
 
+        <div className="glass-panel rounded-2xl p-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Link href="/attendance/roster" className="rounded-xl bg-primary-50 px-4 py-3 text-sm font-bold text-primary-700">
+              재적 명단
+            </Link>
+            <Link href="/attendance/roster/classes" className="rounded-xl px-4 py-3 text-sm font-semibold text-gray-500 hover:bg-white/70 hover:text-gray-900">
+              반별 모임
+            </Link>
+          </div>
+        </div>
+
         {loading ? (
           <TableSkeleton rows={8} cols={3} />
         ) : (

@@ -18,6 +18,7 @@ import {
   CalendarCheck,
   ChartNoAxesColumnIncreasing,
   UserRoundCog,
+  UsersRound,
 } from 'lucide-react';
 import { useUser } from '@/hooks/useUser';
 import { createClient } from '@/lib/supabase';
@@ -90,7 +91,10 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
         { label: '출석 체크', href: '/attendance', icon: CalendarCheck },
         { label: '출석 통계', href: '/attendance/statistics', icon: ChartNoAxesColumnIncreasing },
         ...(canManageAttendance
-          ? [{ label: '재적 관리', href: '/attendance/roster', icon: UserRoundCog }]
+          ? [
+              { label: '재적 관리', href: '/attendance/roster', icon: UserRoundCog },
+              { label: '반별 모임', href: '/attendance/roster/classes', icon: UsersRound },
+            ]
           : []),
       ],
     });
@@ -216,6 +220,8 @@ export default function Sidebar({ role, mobile = false }: SidebarProps) {
                     ? pathname === '/'
                     : item.href === '/attendance'
                       ? pathname === '/attendance'
+                    : item.href === '/attendance/roster'
+                      ? pathname === '/attendance/roster'
                     : pathname.startsWith(item.href);
                 return (
                   <li key={item.href}>
