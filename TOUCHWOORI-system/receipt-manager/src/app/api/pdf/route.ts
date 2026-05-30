@@ -218,6 +218,7 @@ export async function POST(request: NextRequest) {
         title: title || `정산서 (${startDate} ~ ${endDate})`,
         period: { startDate, endDate },
         carryoverBalance,
+        carryoverLabel: `${startDate} 직전 잔액`,
         totalIncome,
         totalExpense,
         endingBalance,

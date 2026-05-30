@@ -68,6 +68,7 @@ interface PdfData {
   title: string;
   period: { startDate: string; endDate: string };
   carryoverBalance: number;
+  carryoverLabel?: string;
   totalIncome: number;
   totalExpense: number;
   endingBalance: number;
@@ -489,10 +490,10 @@ export default function SettlementsPage() {
               {pdfData.period.startDate} ~ {pdfData.period.endDate}
             </Text>
 
-            {/* 수입부 (이월 잔액 포함) */}
+            {/* 수입부 (시작일 직전 잔액 포함) */}
             <Text style={styles.sectionTitle}>수입부</Text>
             <View style={{ ...styles.tableRow, backgroundColor: '#eff6ff' }}>
-              <Text style={{ ...styles.tableCell, color: '#1e40af' }}>이월 잔액</Text>
+              <Text style={{ ...styles.tableCell, color: '#1e40af' }}>{pdfData.carryoverLabel || '시작일 직전 잔액'}</Text>
               <Text style={{ ...styles.tableCellR, color: '#1e3a8a', fontWeight: 'bold' }}>{pdfData.carryoverBalance.toLocaleString('ko-KR')} 원</Text>
             </View>
             {pdfData.incomeSummary.map((s, i) => (
@@ -778,7 +779,7 @@ export default function SettlementsPage() {
                     {formatDateShort(pdfData.period.endDate)}
                   </p>
 
-                  {/* 수입 테이블 (이월 잔액 포함) */}
+                  {/* 수입 테이블 (시작일 직전 잔액 포함) */}
                   <div className="border border-green-200 rounded-lg overflow-hidden mb-4">
                     <table className="w-full text-sm">
                       <thead>
@@ -789,7 +790,7 @@ export default function SettlementsPage() {
                       </thead>
                       <tbody className="divide-y divide-green-100">
                         <tr className="bg-blue-50/50">
-                          <td className="px-4 py-2 text-blue-800 font-medium">이월 잔액</td>
+                          <td className="px-4 py-2 text-blue-800 font-medium">{pdfData.carryoverLabel || '시작일 직전 잔액'}</td>
                           <td className="px-4 py-2 text-right font-medium tabular-nums text-blue-800">{formatCurrency(pdfData.carryoverBalance)}</td>
                         </tr>
                         {pdfData.incomeSummary.map((s, i) => (
@@ -839,7 +840,7 @@ export default function SettlementsPage() {
                     <table className="w-full text-sm">
                       <tbody>
                         <tr className="border-b border-gray-200">
-                          <td className="px-4 py-2.5 text-gray-700 font-medium">수입부 합계 (이월 + 당기 수입)</td>
+                          <td className="px-4 py-2.5 text-gray-700 font-medium">수입부 합계 (시작일 직전 잔액 + 당기 수입)</td>
                           <td className="px-4 py-2.5 text-right tabular-nums font-medium text-green-700">{formatCurrency(pdfData.carryoverBalance + pdfData.totalIncome)}</td>
                         </tr>
                         <tr className="border-b border-gray-200">
