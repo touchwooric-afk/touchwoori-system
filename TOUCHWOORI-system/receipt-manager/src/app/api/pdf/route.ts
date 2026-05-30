@@ -4,6 +4,7 @@ import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
 const PDF_QUERY_PAGE_SIZE = 1000;
+const CARRYOVER_KEYWORD = '이월금';
 
 async function fetchAllRows<T>(
   buildQuery: () => any,
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: priorError }, { status: 500 });
     }
 
-    const carryoverBalance = (priorEntries || []).reduce(
+    const priorBalance = (priorEntries || []).reduce(
       (sum, e) => sum + (e.income || 0) - (e.expense || 0), 0
     );
 
@@ -166,6 +167,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error }, { status: 500 });
     }
 
+    const isCarryoverEntry = (entry: { date: string; description: string }) => (
+      entry.date === startDate && entry.description.includes(CARRYOVER_KEYWORD)
+    );
+    const carryoverEntries = (allEntries || []).filter(isCarryoverEntry);
+    const carryoverEntryAmount = carryoverEntries.reduce(
+      (sum, entry) => sum + (entry.income || 0) - (entry.expense || 0),
+      0
+    );
+    const carryoverBalance = priorBalance + carryoverEntryAmount;
+    const carryoverLabel = carryoverEntries.length > 0
+      ? '전년도 이월금'
+      : `${startDate} 직전 잔액`;
+
     // 카테고리별 수입/지출 합계 집계
     const incomeCatMap = new Map<string, { category: string; total: number }>();
     const expenseCatMap = new Map<string, { category: string; total: number }>();
@@ -177,6 +191,8 @@ export async function POST(request: NextRequest) {
     let totalExpense = 0;
 
     for (const entry of allEntries || []) {
+      if (isCarryoverEntry(entry)) continue;
+
       const categoryName = entry.categories?.name || '미분류';
 
       if ((entry.income || 0) > 0) {
@@ -218,7 +234,7 @@ export async function POST(request: NextRequest) {
         title: title || `정산서 (${startDate} ~ ${endDate})`,
         period: { startDate, endDate },
         carryoverBalance,
-        carryoverLabel: `${startDate} 직전 잔액`,
+        carryoverLabel,
         totalIncome,
         totalExpense,
         endingBalance,
