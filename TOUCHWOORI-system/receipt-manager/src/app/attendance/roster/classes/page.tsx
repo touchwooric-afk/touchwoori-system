@@ -19,6 +19,14 @@ const GRADE_STYLES: Record<number, string> = {
   3: 'bg-purple-50 text-purple-700 ring-purple-100',
 };
 
+const STUDENT_CARD_GRID_STYLE = {
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
+};
+
+const TEACHER_GRID_STYLE = {
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+};
+
 function sortStudents(a: AttendanceMember, b: AttendanceMember) {
   return Number(a.is_long_absent) - Number(b.is_long_absent)
     || (a.grade || 0) - (b.grade || 0)
@@ -154,54 +162,72 @@ export default function AttendanceClassAssignmentPage() {
     if (studentId) void moveStudent(studentId, teacherId);
   };
 
-  const renderStudentCard = (student: AttendanceMember) => (
-    <div
-      key={student.id}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData('text/plain', student.id);
-        event.dataTransfer.effectAllowed = 'move';
-        setDraggingId(student.id);
-      }}
-      onDragEnd={() => {
-        setDraggingId(null);
-        setDropTarget(null);
-      }}
-      className={`rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition ${
-        draggingId === student.id ? 'scale-[0.98] opacity-50' : 'hover:-translate-y-0.5 hover:shadow-md'
-      } ${savingId === student.id ? 'opacity-60' : ''}`}
-    >
-      <div className="flex items-start gap-2">
-        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gray-300" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <p className="font-semibold text-gray-900">{student.name}</p>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${GRADE_STYLES[student.grade || 1]}`}>
-              {student.grade}학년
-            </span>
-            {student.is_long_absent && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">장결</span>
-            )}
+  const renderStudentCard = (student: AttendanceMember) => {
+    const isLongAbsent = student.is_long_absent;
+    return (
+      <div
+        key={student.id}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData('text/plain', student.id);
+          event.dataTransfer.effectAllowed = 'move';
+          setDraggingId(student.id);
+        }}
+        onDragEnd={() => {
+          setDraggingId(null);
+          setDropTarget(null);
+        }}
+        className={`rounded-xl border p-3 shadow-sm transition ${
+          isLongAbsent
+            ? 'border-gray-300 bg-gray-200/90 text-gray-500 opacity-75'
+            : 'border-gray-200 bg-white'
+        } ${
+          draggingId === student.id
+            ? 'scale-[0.98] opacity-50'
+            : isLongAbsent
+              ? 'hover:shadow-sm'
+              : 'hover:-translate-y-0.5 hover:shadow-md'
+        } ${savingId === student.id ? 'opacity-60' : ''}`}
+      >
+        <div className="flex items-start gap-2">
+          <GripVertical className={`mt-0.5 h-4 w-4 shrink-0 cursor-grab ${isLongAbsent ? 'text-gray-400' : 'text-gray-300'}`} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className={`font-semibold ${isLongAbsent ? 'text-gray-600' : 'text-gray-900'}`}>{student.name}</p>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${
+                isLongAbsent ? 'bg-gray-300 text-gray-600 ring-gray-300' : GRADE_STYLES[student.grade || 1]
+              }`}>
+                {student.grade}학년
+              </span>
+              {isLongAbsent && (
+                <span className="rounded-full bg-gray-500 px-2 py-0.5 text-xs font-semibold text-white">장결</span>
+              )}
+            </div>
+            {student.memo && <p className="mt-1 truncate text-xs text-gray-500">{student.memo}</p>}
+            <select
+              value={student.homeroom_teacher_id || ''}
+              disabled={savingId === student.id}
+              onChange={(event) => void moveStudent(student.id, event.target.value || null)}
+              className={`mt-2 w-full rounded-lg border px-2 py-1.5 text-xs ${
+                isLongAbsent
+                  ? 'border-gray-300 bg-gray-100 text-gray-500'
+                  : 'border-gray-200 bg-gray-50 text-gray-700'
+              }`}
+            >
+              <option value="">미배정</option>
+              {homeroomTeachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>{teacher.name} 선생님</option>
+              ))}
+            </select>
           </div>
-          {student.memo && <p className="mt-1 truncate text-xs text-gray-500">{student.memo}</p>}
-          <select
-            value={student.homeroom_teacher_id || ''}
-            disabled={savingId === student.id}
-            onChange={(event) => void moveStudent(student.id, event.target.value || null)}
-            className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-700"
-          >
-            <option value="">미배정</option>
-            {homeroomTeachers.map((teacher) => (
-              <option key={teacher.id} value={teacher.id}>{teacher.name} 선생님</option>
-            ))}
-          </select>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderDropZone = (id: string, title: string, subtitle: string, zoneStudents: AttendanceMember[], teacherId: string | null) => {
     const isActiveDrop = dropTarget === id;
+    const activeStudentCount = zoneStudents.filter((student) => !student.is_long_absent).length;
     return (
       <section
         key={id}
@@ -223,13 +249,16 @@ export default function AttendanceClassAssignmentPage() {
             <h2 className="font-bold text-gray-900">{title}</h2>
             <p className="mt-1 text-xs text-gray-500">{subtitle}</p>
           </div>
-          <span className="rounded-full bg-gray-900 px-2.5 py-1 text-xs font-bold text-white">{zoneStudents.length}명</span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">전체 {zoneStudents.length}명</span>
+            <span className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-bold text-primary-700">장결 제외 {activeStudentCount}명</span>
+          </div>
         </div>
-        <div className="flex flex-1 flex-col gap-2">
+        <div className="grid flex-1 auto-rows-max gap-2" style={STUDENT_CARD_GRID_STYLE}>
           {zoneStudents.length > 0 ? (
             zoneStudents.map(renderStudentCard)
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/80 p-4 text-center text-sm text-gray-400">
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/80 p-4 text-center text-sm text-gray-400">
               여기에 학생 카드를 끌어다 놓으세요
             </div>
           )}
@@ -305,7 +334,7 @@ export default function AttendanceClassAssignmentPage() {
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="grid gap-4 xl:grid-cols-3">
+                <div className="grid gap-4" style={TEACHER_GRID_STYLE}>
                   {homeroomTeachers.map((teacher) => renderDropZone(
                     teacher.id,
                     `${teacher.name} 선생님`,
