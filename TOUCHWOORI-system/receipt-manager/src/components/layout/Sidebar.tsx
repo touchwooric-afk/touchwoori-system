@@ -160,7 +160,7 @@ export default function Sidebar({
     <aside className={
       mobile
         ? 'flex flex-col w-full h-full'
-        : 'hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:pt-16 glass-header border-r'
+        : 'hidden xl:flex xl:w-64 xl:flex-col xl:fixed xl:inset-y-0 xl:pt-16 glass-header border-r'
     }>
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => (

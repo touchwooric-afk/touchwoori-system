@@ -570,8 +570,8 @@ export default function ReceiptUploadPage() {
             <h2 className="text-sm font-semibold text-gray-800">계좌 정보 <span className="text-xs font-normal text-gray-400">(회계 담당자에게 전달됩니다)</span></h2>
             {bankError && <span className="text-xs font-semibold text-red-600">⚠ 필수 정보입니다</span>}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="w-[120px]">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[120px_120px_1fr]">
+            <div>
               <label className={`block text-xs mb-1 ${bankError && !bankInfo.bank_name ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>은행명</label>
               <input
                 type="text"
@@ -581,7 +581,7 @@ export default function ReceiptUploadPage() {
                 className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${bankError && !bankInfo.bank_name ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-primary-500'}`}
               />
             </div>
-            <div className="w-[120px]">
+            <div>
               <label className={`block text-xs mb-1 ${bankError && !bankInfo.account_holder ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>예금주</label>
               <input
                 type="text"
@@ -591,7 +591,7 @@ export default function ReceiptUploadPage() {
                 className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${bankError && !bankInfo.account_holder ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-primary-500'}`}
               />
             </div>
-            <div className="flex-1 min-w-[160px]">
+            <div className="sm:col-span-2 xl:col-span-1">
               <label className={`block text-xs mb-1 ${bankError && !bankInfo.account_number ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>계좌번호</label>
               <input
                 type="text"
@@ -700,21 +700,21 @@ export default function ReceiptUploadPage() {
         </div>
 
         {/* 장부 선택 + 파일 선택 */}
-        <div className="glass-panel rounded-xl p-5 flex flex-wrap items-end gap-4">
+        <div className="glass-panel flex flex-col gap-4 rounded-xl p-4 sm:flex-row sm:flex-wrap sm:items-end sm:p-5">
           {!isTeacher && (
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="block text-sm font-medium text-gray-700 mb-1">대상 장부</label>
               <select
                 value={selectedLedgerId}
                 onChange={(e) => setSelectedLedgerId(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm
-                  focus:ring-2 focus:ring-primary-500 outline-none min-w-[180px]"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                  focus:ring-2 focus:ring-primary-500 outline-none sm:min-w-[180px]"
               >
                 {ledgers.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
           )}
-          <div>
+          <div className="w-full sm:w-auto">
             <input
               ref={fileInputRef}
               type="file"
@@ -723,7 +723,7 @@ export default function ReceiptUploadPage() {
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
-            <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="w-full sm:w-auto">
               <Upload className="h-4 w-4" />
               이미지 선택 (다중)
             </Button>
@@ -733,7 +733,7 @@ export default function ReceiptUploadPage() {
         {/* 드래그 앤 드롭 */}
         {rows.length === 0 && (
           <div
-            className="glass-panel-soft border-2 border-dashed border-white/70 rounded-xl p-16 text-center
+            className="glass-panel-soft border-2 border-dashed border-white/70 rounded-xl p-8 text-center sm:p-16
               hover:border-primary-400 transition-colors cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -748,12 +748,12 @@ export default function ReceiptUploadPage() {
         {/* 테이블 */}
         {rows.length > 0 && (
           <div className="glass-panel rounded-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-100 px-4 py-3 text-sm text-gray-500 sm:px-5">
               <span>총 {rows.length}건</span>
               {savedCount  > 0 && <span className="text-emerald-600">✓ 저장 {savedCount}건</span>}
               {pendingCount > 0 && <span className="text-amber-600">대기 {pendingCount}건</span>}
               {errorCount  > 0 && <span className="text-rose-600">⚠ 보류 {errorCount}건</span>}
-              <span className="ml-auto px-4 py-1.5 rounded-lg bg-orange-100 border border-orange-300">
+              <span className="w-full rounded-lg border border-orange-300 bg-orange-100 px-3 py-2 text-center sm:ml-auto sm:w-auto sm:px-4 sm:py-1.5">
                 <span className="font-medium text-orange-900">총 정산요청금액</span>
                 {savedCount > 0 && savedCount < rows.length
                   ? <> <span className="font-bold text-orange-600">{formatCurrency(savedAmount)}</span> <span className="text-xs font-normal text-orange-500">/ 전체 {formatCurrency(totalAmount)}</span></>
@@ -761,7 +761,27 @@ export default function ReceiptUploadPage() {
                 }
               </span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 bg-gray-50/50 p-3 xl:hidden">
+              {rows.map((row) => (
+                <ReceiptMobileCard
+                  key={row.localId}
+                  row={row}
+                  categories={categories}
+                  isTeacher={isTeacher}
+                  onUpdate={(patch) => updateRow(row.localId, patch)}
+                  onRefreshCandidates={(desc, amount) => {
+                    const ledgerIdToUse = isTeacher ? teacherLedgerId : selectedLedgerId;
+                    if (ledgerIdToUse) fetchCandidates(row.localId, ledgerIdToUse, desc, amount, row.date);
+                    checkSimilarReceipt(row.localId, amount, ledgerIdToUse || undefined);
+                  }}
+                  onManualSearch={async () => {}}
+                  onPreview={() => setPreviewModal({ open: true, url: row.previewUrl, name: row.file.name })}
+                  onRemove={() => removeRow(row.localId)}
+                  onSave={() => saveRow(row)}
+                />
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 text-left">
@@ -884,14 +904,14 @@ export default function ReceiptUploadPage() {
 
       {/* 하단 고정 저장 바 */}
       {rows.length > 0 && (
-        <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center z-20 pointer-events-none px-4">
-          <div className="pointer-events-auto glass-popover rounded-2xl px-5 py-3 flex items-center gap-4">
-            <div className="text-sm text-gray-600">
+        <div className="pointer-events-none fixed bottom-16 left-0 right-0 z-20 flex justify-center px-3 xl:bottom-6">
+          <div className="glass-popover pointer-events-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl px-3 py-2 sm:w-auto sm:max-w-none sm:gap-4 sm:px-5 sm:py-3">
+            <div className="min-w-0 text-xs text-gray-600 sm:text-sm">
               <span className="font-semibold text-gray-900">{rows.length}개</span> 파일
               {savedCount > 0 && <span className="ml-2 text-emerald-600">✓ {savedCount}건 저장됨</span>}
               {errorCount > 0 && <span className="ml-2 text-red-500">⚠ {errorCount}건 오류</span>}
             </div>
-            <Button onClick={handleSaveAll} loading={savingAll} disabled={pendingCount === 0}>
+            <Button onClick={handleSaveAll} loading={savingAll} disabled={pendingCount === 0} className="shrink-0">
               <CheckCircle className="h-4 w-4" />
               {pendingCount > 0 ? `${pendingCount}건 전체 저장` : '모두 저장됨'}
             </Button>
@@ -913,6 +933,107 @@ interface RowProps {
   onPreview: () => void;
   onRemove: () => void;
   onSave: () => Promise<boolean>;
+}
+
+function ReceiptMobileCard({
+  row,
+  categories,
+  isTeacher,
+  onUpdate,
+  onRefreshCandidates,
+  onPreview,
+  onRemove,
+  onSave,
+}: RowProps) {
+  const isSaved = row.saveStatus === 'saved';
+  const isSaving = row.saveStatus === 'saving';
+  const fieldClass = 'mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:bg-gray-50';
+
+  const selectCandidate = (candidateId: string) => {
+    const candidate = row.candidates.find((item) => item.id === candidateId);
+    onUpdate({
+      selectedCandidateId: candidateId || null,
+      ...(candidate ? {
+        date: candidate.date,
+        categoryId: candidate.category_id || row.categoryId,
+        saveStatus: 'idle' as const,
+        errorMsg: undefined,
+      } : {}),
+    });
+  };
+
+  return (
+    <article className={`rounded-2xl border bg-white p-4 shadow-sm ${row.saveStatus === 'error' ? 'border-rose-300' : 'border-gray-200'} ${isSaved ? 'opacity-60' : ''}`}>
+      <div className="flex items-start gap-3">
+        <button type="button" onClick={onPreview} className="shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={row.previewUrl} alt="" className="h-20 w-20 rounded-xl border border-gray-200 object-cover" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="break-all text-sm font-semibold text-gray-800">{row.file.name}</p>
+          <p className="mt-1 text-xs text-gray-400">이미지를 누르면 크게 볼 수 있습니다</p>
+        </div>
+        {!isSaved && <button type="button" onClick={onRemove} className="rounded-lg p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-500" aria-label="영수증 제거"><X className="h-4 w-4" /></button>}
+      </div>
+
+      {row.similarWarning && !isSaved && (
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          동일 금액 영수증이 있습니다: {row.similarWarning.description} · {row.similarWarning.date}
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="text-xs font-semibold text-gray-600">날짜
+          <input type="date" value={row.date} disabled={isSaved} onChange={(event) => onUpdate({ date: event.target.value, saveStatus: 'idle', errorMsg: undefined })} className={fieldClass} />
+        </label>
+        <label className="text-xs font-semibold text-gray-600">금액
+          <input type="text" inputMode="numeric" value={row.amount} disabled={isSaved} placeholder="0" onChange={(event) => {
+            const value = formatAmountInput(event.target.value);
+            onUpdate({ amount: value, saveStatus: row.saveStatus === 'error' ? 'idle' : row.saveStatus, errorMsg: undefined });
+            onRefreshCandidates(row.description, value);
+          }} className={`${fieldClass} text-right tabular-nums`} />
+        </label>
+        <label className="text-xs font-semibold text-gray-600">카테고리
+          <select value={row.categoryId} disabled={isSaved} onChange={(event) => onUpdate({ categoryId: event.target.value, saveStatus: 'idle', errorMsg: undefined })} className={fieldClass}>
+            <option value="">선택</option>
+            <optgroup label="수입">{categories.filter((category) => category.type === 'income').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</optgroup>
+            <optgroup label="지출">{categories.filter((category) => category.type === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</optgroup>
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-gray-600">항목명
+          <input type="text" value={row.description} disabled={isSaved} placeholder="항목명" onChange={(event) => {
+            onUpdate({ description: event.target.value, saveStatus: 'idle', errorMsg: undefined });
+            onRefreshCandidates(event.target.value, row.amount);
+          }} className={fieldClass} />
+        </label>
+      </div>
+
+      {!isTeacher && !isSaved && (
+        <div className="mt-4 rounded-xl border border-primary-100 bg-primary-50/50 p-3">
+          <p className="mb-2 text-xs font-bold text-primary-800">장부 연결</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => {
+              const first = row.candidates[0] || null;
+              onUpdate({ matchMode: 'link', selectedCandidateId: first?.id || null, ...(first ? { date: first.date, categoryId: first.category_id || row.categoryId } : {}) });
+            }} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${row.matchMode === 'link' ? 'border-primary-600 bg-primary-600 text-white' : 'border-primary-200 bg-white text-primary-700'}`}>기존 항목 연결</button>
+            <button type="button" onClick={() => onUpdate({ matchMode: 'new', selectedCandidateId: null })} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${row.matchMode === 'new' ? 'border-primary-600 bg-primary-600 text-white' : 'border-primary-200 bg-white text-primary-700'}`}>새 항목 생성</button>
+          </div>
+          {row.matchMode === 'link' && (
+            <select value={row.selectedCandidateId || ''} onChange={(event) => selectCandidate(event.target.value)} className={fieldClass}>
+              <option value="">연결할 항목 선택</option>
+              {row.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.date} · {candidate.description} · {formatCurrency(candidate.amount)}</option>)}
+            </select>
+          )}
+          {row.matchMode === 'link' && row.candidates.length === 0 && <p className="mt-2 text-xs text-primary-600">일치 후보가 없습니다. 새 항목 생성을 선택해주세요.</p>}
+        </div>
+      )}
+
+      {row.errorMsg && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600">{row.errorMsg}</p>}
+      <Button type="button" onClick={() => void onSave()} loading={isSaving} disabled={isSaved} className="mt-4 w-full">
+        {isSaved ? <><CheckCircle className="h-4 w-4" />저장됨</> : '이 영수증 저장'}
+      </Button>
+    </article>
+  );
 }
 
 function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandidates, onManualSearch, onPreview, onRemove, onSave }: RowProps) {

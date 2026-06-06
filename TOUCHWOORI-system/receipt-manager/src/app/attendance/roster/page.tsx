@@ -352,12 +352,12 @@ export default function AttendanceRosterPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="rounded-2xl bg-gradient-to-r from-primary-700 to-primary-500 p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
+        <div className="rounded-2xl bg-gradient-to-r from-primary-700 to-primary-500 p-4 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)] sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5"><UserRoundCog className="h-6 w-6" /></div>
               <div>
-                <h1 className="text-2xl font-bold">재적 관리</h1>
+                <h1 className="text-xl font-bold sm:text-2xl">재적 관리</h1>
                 <p className="mt-0.5 text-sm text-white/80">학생 재적, 장결 상태와 담임선생님을 관리합니다</p>
               </div>
             </div>
@@ -385,7 +385,7 @@ export default function AttendanceRosterPage() {
         ) : (
           <div className="space-y-5">
             <section className="glass-panel overflow-hidden rounded-2xl">
-              <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
+              <div className="flex flex-col gap-3 border-b border-white/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="font-bold text-gray-900">교사 명단</h2>
                   <p className="text-xs text-gray-500">{teachers.length}명 등록 · 메모에서 Tab을 누르면 새 행 추가</p>
@@ -399,7 +399,28 @@ export default function AttendanceRosterPage() {
                   <Save className="h-4 w-4" />전체 저장
                 </Button>
               </div>
-              <div className="overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4">
+              <div className="space-y-3 border-b border-gray-100 bg-primary-50/40 p-3 xl:hidden">
+                {teacherRows.map((row, index) => (
+                  <div key={index} className="rounded-xl border border-primary-100 bg-white p-3 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-xs font-bold text-primary-700">교사 {index + 1}</span>
+                      <button type="button" onClick={() => removeQuickRow('teacher', index)} className="rounded-lg p-2 text-gray-400 hover:bg-danger-50 hover:text-danger-600" aria-label="교사 입력 카드 삭제"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold text-gray-600">이름<input value={row.name} onChange={(event) => updateTeacherRow(index, 'name', event.target.value)} placeholder="교사 이름" className={`${QUICK_FIELD_CLASS} mt-1`} /></label>
+                      <label className="text-xs font-semibold text-gray-600">담임<select value={row.is_homeroom ? 'homeroom' : 'none'} onChange={(event) => {
+                        const isHomeroom = event.target.value === 'homeroom';
+                        setTeacherRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, is_homeroom: isHomeroom, grade: isHomeroom ? item.grade || 1 : 0 } : item));
+                      }} className={`${QUICK_FIELD_CLASS} mt-1`}><option value="none">없음</option><option value="homeroom">담임</option></select></label>
+                      {row.is_homeroom && <label className="text-xs font-semibold text-gray-600">학년<select value={row.grade || 1} onChange={(event) => updateTeacherRow(index, 'grade', Number(event.target.value))} className={`${QUICK_FIELD_CLASS} mt-1`}><option value={1}>1학년</option><option value={2}>2학년</option><option value={3}>3학년</option></select></label>}
+                      <label className="text-xs font-semibold text-gray-600">직분<input value={row.position} onChange={(event) => updateTeacherRow(index, 'position', event.target.value)} placeholder="교사, 부장교사" className={`${QUICK_FIELD_CLASS} mt-1`} /></label>
+                      <label className="text-xs font-semibold text-gray-600 sm:col-span-2">메모<input value={row.memo} onChange={(event) => updateTeacherRow(index, 'memo', event.target.value)} placeholder="메모" className={`${QUICK_FIELD_CLASS} mt-1`} /></label>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={() => addQuickRow('teacher')} className="w-full rounded-xl border-2 border-dashed border-primary-200 bg-white/70 py-3 text-sm font-semibold text-primary-600">+ 다음 교사 추가</button>
+              </div>
+              <div className="hidden overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4 xl:block">
                 <table ref={teacherTableRef} className="min-w-[900px] w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-semibold text-gray-500">
@@ -431,7 +452,7 @@ export default function AttendanceRosterPage() {
               <div>{teachers.map(renderMember)}</div>
             </section>
             <section className="glass-panel overflow-hidden rounded-2xl">
-              <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
+              <div className="flex flex-col gap-3 border-b border-white/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="font-bold text-gray-900">학생 명단</h2>
                   <p className="text-xs text-gray-500">{students.length}명 등록 · 메모에서 Tab을 누르면 새 행 추가</p>
@@ -445,7 +466,25 @@ export default function AttendanceRosterPage() {
                   <Save className="h-4 w-4" />전체 저장
                 </Button>
               </div>
-              <div className="overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4">
+              <div className="space-y-3 border-b border-gray-100 bg-primary-50/40 p-3 xl:hidden">
+                {studentRows.map((row, index) => (
+                  <div key={index} className="rounded-xl border border-primary-100 bg-white p-3 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-xs font-bold text-primary-700">학생 {index + 1}</span>
+                      <button type="button" onClick={() => removeQuickRow('student', index)} className="rounded-lg p-2 text-gray-400 hover:bg-danger-50 hover:text-danger-600" aria-label="학생 입력 카드 삭제"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold text-gray-600">이름<input value={row.name} onChange={(event) => updateStudentRow(index, 'name', event.target.value)} placeholder="학생 이름" className={`${QUICK_FIELD_CLASS} mt-1`} /></label>
+                      <label className="text-xs font-semibold text-gray-600">학년<select value={row.grade} onChange={(event) => updateStudentRow(index, 'grade', Number(event.target.value))} className={`${QUICK_FIELD_CLASS} mt-1`}><option value={1}>1학년</option><option value={2}>2학년</option><option value={3}>3학년</option></select></label>
+                      <label className="text-xs font-semibold text-gray-600">담임<select value={row.homeroom_teacher_id} onChange={(event) => updateStudentRow(index, 'homeroom_teacher_id', event.target.value)} className={`${QUICK_FIELD_CLASS} mt-1`}><option value="">담임 없음</option>{selectableTeachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}</select></label>
+                      <label className="text-xs font-semibold text-gray-600">구분<select value={row.status} onChange={(event) => updateStudentRow(index, 'status', event.target.value as StudentQuickStatus)} className={`${QUICK_FIELD_CLASS} mt-1`}><option value="enrolled">재적 학생</option><option value="newcomer">새친구</option><option value="long_absent">장결자</option></select></label>
+                      <label className="text-xs font-semibold text-gray-600 sm:col-span-2">메모<input value={row.memo} onChange={(event) => updateStudentRow(index, 'memo', event.target.value)} placeholder="메모" className={`${QUICK_FIELD_CLASS} mt-1`} /></label>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={() => addQuickRow('student')} className="w-full rounded-xl border-2 border-dashed border-primary-200 bg-white/70 py-3 text-sm font-semibold text-primary-600">+ 다음 학생 추가</button>
+              </div>
+              <div className="hidden overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4 xl:block">
                 <table ref={studentTableRef} className="min-w-[960px] w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-semibold text-gray-500">

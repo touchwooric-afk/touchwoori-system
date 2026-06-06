@@ -68,27 +68,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden rounded-lg p-2 text-gray-500 hover:bg-gray-100 transition-colors"
+              className="xl:hidden shrink-0 rounded-lg p-2 text-gray-500 hover:bg-gray-100 transition-colors"
               aria-label="메뉴"
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <Link
               href="/"
-              className="text-lg font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+              className="max-w-[124px] truncate text-sm font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity sm:max-w-none sm:text-lg"
             >
               {user.department_id?.includes('중등부') ? 'DREAMWOORI 행정관리' : '고등부 행정관리'}
             </Link>
           </div>
 
           {/* 사용자 정보 */}
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
             {/* 부서 선택기 — cross-dept 역할만 표시 */}
             {isCrossDept && departments.length > 0 && (
               <select
                 value={activeDept}
                 onChange={(e) => setActiveDept(e.target.value)}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-semibold
+                className="max-w-[145px] rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-semibold
                   text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
               >
                 {departments.map((d) => (
@@ -117,7 +117,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* 모바일 메뉴 오버레이 */}
       {mobileMenuOpen && (
         <div
-          className="md:hidden fixed inset-0 z-20 bg-black/40"
+          className="xl:hidden fixed inset-0 z-20 bg-black/40"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
@@ -146,8 +146,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* 메인 콘텐츠 */}
-      <main className="pt-16 pb-20 md:pb-6 md:pl-64">
-        <div className="max-w-[1600px] mx-auto px-4 py-6 md:px-6 animate-fade-in">
+      <main className="pt-16 pb-20 xl:pb-6 xl:pl-64">
+        <div className="max-w-[1600px] mx-auto px-3 py-4 sm:px-4 sm:py-6 xl:px-6 animate-fade-in">
           {children}
         </div>
       </main>
