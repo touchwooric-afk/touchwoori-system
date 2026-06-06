@@ -455,7 +455,7 @@ export default function ExcelPage() {
                       <tr className="bg-gray-50 border-b border-gray-200">
                         <th className="px-2 py-2 text-left font-medium text-gray-600 w-6">#</th>
                         <th className="px-2 py-2 text-left font-medium text-gray-600">날짜</th>
-                        <th className="px-2 py-2 text-left font-medium text-gray-600">항목</th>
+                        <th className="px-2 py-2 text-left font-medium text-gray-600">항목명</th>
                         <th className="px-2 py-2 text-right font-medium text-gray-600">수입</th>
                         <th className="px-2 py-2 text-right font-medium text-gray-600">지출</th>
                         <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">카테고리</th>

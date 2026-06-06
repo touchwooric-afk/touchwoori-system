@@ -140,11 +140,11 @@ function LedgerPageInner() {
     ...(isEditor ? ['checkbox'] : []),
     'date',
     'description',
-    ...(isMainLedger ? ['ledger'] : []),
     'income',
     'expense',
-    'balance',
     'category',
+    ...(isMainLedger ? ['ledger'] : []),
+    'balance',
     'memo',
     ...(isEditor ? ['action'] : []),
   ];
@@ -926,11 +926,11 @@ function LedgerPageInner() {
                   {isEditor && <col style={{ width: colWidths.checkbox }} />}
                   <col style={{ width: colWidths.date }} />
                   <col style={{ width: colWidths.description }} />
-                  {isMainLedger && <col style={{ width: colWidths.ledger }} />}
                   <col style={{ width: colWidths.income }} />
                   <col style={{ width: colWidths.expense }} />
-                  <col style={{ width: colWidths.balance }} />
                   <col style={{ width: colWidths.category }} />
+                  {isMainLedger && <col style={{ width: colWidths.ledger }} />}
+                  <col style={{ width: colWidths.balance }} />
                   <col style={{ width: colWidths.memo }} />
                   {isEditor && <col style={{ width: colWidths.action }} />}
                 </colgroup>
@@ -961,17 +961,10 @@ function LedgerPageInner() {
                         className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
                     <th style={{ width: colWidths.description }} className="relative px-4 py-3 text-left font-medium text-gray-600">
-                      항목
+                      항목명
                       <div onMouseDown={(e) => handleResizeStart(e, 'description')} onDoubleClick={(e) => handleResizeReset(e, 'description')}
                         className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
-                    {isMainLedger && (
-                      <th style={{ width: colWidths.ledger }} className="relative px-4 py-3 text-left font-medium text-gray-600">
-                        장부
-                        <div onMouseDown={(e) => handleResizeStart(e, 'ledger')} onDoubleClick={(e) => handleResizeReset(e, 'ledger')}
-                          className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
-                      </th>
-                    )}
                     <th
                       style={{ width: colWidths.income }}
                       className="relative px-4 py-3 text-right font-medium text-gray-600 cursor-pointer select-none"
@@ -990,11 +983,6 @@ function LedgerPageInner() {
                       <div onMouseDown={(e) => handleResizeStart(e, 'expense')} onDoubleClick={(e) => handleResizeReset(e, 'expense')}
                         className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
-                    <th style={{ width: colWidths.balance }} className="relative px-4 py-3 text-right font-medium text-gray-600">
-                      잔액
-                      <div onMouseDown={(e) => handleResizeStart(e, 'balance')} onDoubleClick={(e) => handleResizeReset(e, 'balance')}
-                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
-                    </th>
                     <th
                       style={{ width: colWidths.category }}
                       className="relative px-4 py-3 text-left font-medium text-gray-600 cursor-pointer select-none"
@@ -1002,6 +990,18 @@ function LedgerPageInner() {
                     >
                       <div className="flex items-center gap-1 pr-1">카테고리<SortIcon field="category" /></div>
                       <div onMouseDown={(e) => handleResizeStart(e, 'category')} onDoubleClick={(e) => handleResizeReset(e, 'category')}
+                        className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                    </th>
+                    {isMainLedger && (
+                      <th style={{ width: colWidths.ledger }} className="relative px-4 py-3 text-left font-medium text-gray-600">
+                        장부
+                        <div onMouseDown={(e) => handleResizeStart(e, 'ledger')} onDoubleClick={(e) => handleResizeReset(e, 'ledger')}
+                          className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
+                      </th>
+                    )}
+                    <th style={{ width: colWidths.balance }} className="relative px-4 py-3 text-right font-medium text-gray-600">
+                      잔액
+                      <div onMouseDown={(e) => handleResizeStart(e, 'balance')} onDoubleClick={(e) => handleResizeReset(e, 'balance')}
                         className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary-400 transition-colors z-10" />
                     </th>
                     <th style={{ width: colWidths.memo }} className="relative px-4 py-3 text-left font-medium text-gray-600">
@@ -1079,19 +1079,6 @@ function LedgerPageInner() {
                           </div>
                         </div>
                       </td>
-                      {isMainLedger && (
-                        <td className="px-4 py-3">
-                          {entry.ledger_name && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
-                              entry.ledger_id === selectedLedgerId
-                                ? 'bg-gray-100 text-gray-500'
-                                : 'bg-violet-50 text-violet-700 border border-violet-200'
-                            }`}>
-                              {entry.ledger_name}
-                            </span>
-                          )}
-                        </td>
-                      )}
                       <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
                         {entry.income > 0 ? (
                           <span className="text-emerald-600 font-medium">
@@ -1109,9 +1096,6 @@ function LedgerPageInner() {
                         ) : (
                           <span className="text-gray-300">-</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums font-bold text-gray-900">
-                        {formatCurrency(entry.balance)}
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
                         {entry.category && (
@@ -1135,6 +1119,22 @@ function LedgerPageInner() {
                             <span className="truncate">{entry.category.name}</span>
                           </button>
                         )}
+                      </td>
+                      {isMainLedger && (
+                        <td className="px-4 py-3">
+                          {entry.ledger_name && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                              entry.ledger_id === selectedLedgerId
+                                ? 'bg-gray-100 text-gray-500'
+                                : 'bg-violet-50 text-violet-700 border border-violet-200'
+                            }`}>
+                              {entry.ledger_name}
+                            </span>
+                          )}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums font-bold text-gray-900">
+                        {formatCurrency(entry.balance)}
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs overflow-hidden">
                         <span className="truncate block">{entry.memo || ''}</span>

@@ -488,7 +488,7 @@ export default function ReceiptDetailPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  내용 <span className="text-danger-600 ml-0.5">*</span>
+                  항목명 <span className="text-danger-600 ml-0.5">*</span>
                 </label>
                 <input
                   type="text"
@@ -574,31 +574,30 @@ export default function ReceiptDetailPage() {
           ) : (
             /* Read mode */
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-gray-500 mb-0.5">날짜</p>
-                  <p className="text-sm font-medium text-gray-900">{formatDate(receipt.date)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-0.5">금액</p>
-                  <p className="text-sm font-semibold text-gray-900">{formatCurrency(receipt.final_amount)}</p>
-                </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-0.5">날짜</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(receipt.date)}</p>
               </div>
 
               <div>
-                <p className="text-xs text-gray-500 mb-0.5">내용</p>
+                <p className="text-xs text-gray-500 mb-0.5">항목명</p>
                 <p className="text-sm text-gray-900">{receipt.description}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <p className="text-xs text-gray-500 mb-0.5">금액</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatCurrency(receipt.final_amount)}</p>
+                </div>
+                <div>
                   <p className="text-xs text-gray-500 mb-0.5">카테고리</p>
                   <p className="text-sm text-gray-900">{receipt.category?.name ?? '-'}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-0.5">거래처</p>
-                  <p className="text-sm text-gray-900">{receipt.vendor || '-'}</p>
-                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500 mb-0.5">거래처</p>
+                <p className="text-sm text-gray-900">{receipt.vendor || '-'}</p>
               </div>
 
               {receipt.memo && (

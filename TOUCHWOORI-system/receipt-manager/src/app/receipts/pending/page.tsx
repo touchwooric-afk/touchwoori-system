@@ -591,7 +591,7 @@ export default function PendingReceiptsPage() {
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">제출자</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">날짜</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">내용</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">항목명</th>
                       <th className="px-4 py-3 text-right font-medium text-gray-600">금액</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">카테고리</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">계좌</th>
@@ -805,7 +805,7 @@ export default function PendingReceiptsPage() {
                 <span className="font-medium text-gray-900">{formatDate(approveModal.receipt.date)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">내용</span>
+                <span className="text-gray-500">항목명</span>
                 <span className="font-medium text-gray-900">{approveModal.receipt.description}</span>
               </div>
               {/* 제출 금액 (수정 불가) */}
@@ -903,7 +903,7 @@ export default function PendingReceiptsPage() {
                 {linkMode === 'new' && (
                   <div className="space-y-3 bg-gray-50 rounded-xl p-4">
                     <p className="text-xs font-medium text-gray-500">장부에 추가될 내용을 확인·수정하세요</p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">날짜</label>
                         <input
@@ -911,17 +911,6 @@ export default function PendingReceiptsPage() {
                           value={entryDate}
                           onChange={(e) => setEntryDate(e.target.value)}
                           className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm
-                            focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">금액</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={entryAmount}
-                          onChange={(e) => setEntryAmount(formatAmount(e.target.value))}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-right tabular-nums
                             focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                         />
                       </div>
@@ -933,6 +922,17 @@ export default function PendingReceiptsPage() {
                         value={entryDesc}
                         onChange={(e) => setEntryDesc(e.target.value)}
                         className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm
+                          focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">금액</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={entryAmount}
+                        onChange={(e) => setEntryAmount(formatAmount(e.target.value))}
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-right tabular-nums
                           focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                       />
                     </div>

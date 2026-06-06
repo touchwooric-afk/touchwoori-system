@@ -369,7 +369,7 @@ export default function ReceiptUploadPage() {
   const saveRow = useCallback(async (row: ReceiptRow, forceSubmit = false): Promise<boolean> => {
     const amount = parseAmountInput(row.amount);
     if (!row.date || !amount || !row.categoryId || !row.description.trim()) {
-      toast.error(`날짜, 금액, 카테고리, 항목명을 모두 입력해주세요 (${row.file.name})`);
+      toast.error(`날짜, 항목명, 금액, 카테고리를 모두 입력해주세요 (${row.file.name})`);
       return false;
     }
     if (!isTeacher && row.matchMode === 'link' && !row.selectedCandidateId) {
@@ -462,8 +462,8 @@ export default function ReceiptUploadPage() {
   // ── 유효성 검사 (전체 저장용) ──────────────────────────────────
   const validateRow = (row: ReceiptRow): string | null => {
     if (!row.date) return '날짜를 입력해주세요';
-    if (!parseAmountInput(row.amount)) return '금액을 입력해주세요';
     if (!row.description.trim()) return '항목명을 입력해주세요';
+    if (!parseAmountInput(row.amount)) return '금액을 입력해주세요';
     if (!row.categoryId) return '카테고리를 선택해주세요';
     if (!isTeacher && row.matchMode === 'link' && !row.selectedCandidateId) return '장부 항목을 선택하거나 새 항목으로 변경해주세요';
     return null;
@@ -543,7 +543,7 @@ export default function ReceiptUploadPage() {
         {/* 파일명 형식 안내 */}
         <div className="space-y-3">
           <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-blue-700">
-            <p>파일명에 날짜, 금액, 항목이 포함되어 있으면 자동으로 인식하고 입력합니다.</p>
+            <p>파일명에 날짜, 항목명, 금액이 포함되어 있으면 자동으로 인식하고 입력합니다.</p>
             <p className="text-xs text-blue-600 mt-2">촬영 후 파일명을 편집하실 수 있다면 미리 정리해두면 더 편하게 업로드하실 수 있습니다.</p>
           </div>
           <div className="glass-panel-soft rounded-xl px-5 py-3 text-sm text-blue-700 space-y-1.5">
@@ -788,9 +788,9 @@ export default function ReceiptUploadPage() {
                     <th className="px-3 py-2 w-20">미리보기</th>
                     <th className="px-3 py-2 min-w-[260px]">파일명</th>
                     <th className="px-3 py-2 w-36">날짜</th>
+                    <th className="px-3 py-2 w-40">항목명</th>
                     <th className="px-3 py-2 w-32 text-right">금액</th>
                     <th className="px-3 py-2 w-36">카테고리</th>
-                    <th className="px-3 py-2 w-40">항목명</th>
                     {!isTeacher && <th className="px-3 py-2 w-64">장부 연결</th>}
                     <th className="px-3 py-2 w-16 text-center">저장</th>
                     <th className="px-3 py-2 w-8"></th>
@@ -986,6 +986,12 @@ function ReceiptMobileCard({
         <label className="text-xs font-semibold text-gray-600">날짜
           <input type="date" value={row.date} disabled={isSaved} onChange={(event) => onUpdate({ date: event.target.value, saveStatus: 'idle', errorMsg: undefined })} className={fieldClass} />
         </label>
+        <label className="text-xs font-semibold text-gray-600">항목명
+          <input type="text" value={row.description} disabled={isSaved} placeholder="항목명" onChange={(event) => {
+            onUpdate({ description: event.target.value, saveStatus: 'idle', errorMsg: undefined });
+            onRefreshCandidates(event.target.value, row.amount);
+          }} className={fieldClass} />
+        </label>
         <label className="text-xs font-semibold text-gray-600">금액
           <input type="text" inputMode="numeric" value={row.amount} disabled={isSaved} placeholder="0" onChange={(event) => {
             const value = formatAmountInput(event.target.value);
@@ -999,12 +1005,6 @@ function ReceiptMobileCard({
             <optgroup label="수입">{categories.filter((category) => category.type === 'income').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</optgroup>
             <optgroup label="지출">{categories.filter((category) => category.type === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</optgroup>
           </select>
-        </label>
-        <label className="text-xs font-semibold text-gray-600">항목명
-          <input type="text" value={row.description} disabled={isSaved} placeholder="항목명" onChange={(event) => {
-            onUpdate({ description: event.target.value, saveStatus: 'idle', errorMsg: undefined });
-            onRefreshCandidates(event.target.value, row.amount);
-          }} className={fieldClass} />
         </label>
       </div>
 
@@ -1115,6 +1115,20 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
         />
       </td>
 
+      {/* 항목명 */}
+      <td className="px-3 py-2">
+        <input
+          type="text" value={row.description} disabled={isSaved}
+          placeholder="항목명"
+          onChange={(e) => {
+            onUpdate({ description: e.target.value, saveStatus: 'idle', errorMsg: undefined });
+            onRefreshCandidates(e.target.value, row.amount);
+          }}
+          className="w-full rounded border border-gray-300 px-2 py-1 text-xs
+            focus:ring-1 focus:ring-primary-500 outline-none disabled:bg-gray-50"
+        />
+      </td>
+
       {/* 금액 */}
       <td className="px-3 py-2">
         <input
@@ -1150,20 +1164,6 @@ function ReceiptTableRow({ row, categories, isTeacher, onUpdate, onRefreshCandid
             ))}
           </optgroup>
         </select>
-      </td>
-
-      {/* 항목명 */}
-      <td className="px-3 py-2">
-        <input
-          type="text" value={row.description} disabled={isSaved}
-          placeholder="항목명"
-          onChange={(e) => {
-            onUpdate({ description: e.target.value, saveStatus: 'idle', errorMsg: undefined });
-            onRefreshCandidates(e.target.value, row.amount);
-          }}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-xs
-            focus:ring-1 focus:ring-primary-500 outline-none disabled:bg-gray-50"
-        />
       </td>
 
       {/* 장부 연결 — 회계교사/마스터만 표시 */}

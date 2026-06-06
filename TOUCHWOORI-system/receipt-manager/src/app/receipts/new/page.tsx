@@ -184,12 +184,12 @@ export default function NewReceiptPage() {
             </div>
             <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">항목명</span>
-                <span className="font-medium text-gray-900 truncate max-w-[180px]">{duplicateConfirm.existing.description}</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-gray-500">날짜</span>
                 <span className="font-medium text-gray-900">{duplicateConfirm.existing.date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">항목명</span>
+                <span className="font-medium text-gray-900 truncate max-w-[180px]">{duplicateConfirm.existing.description}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">금액</span>
