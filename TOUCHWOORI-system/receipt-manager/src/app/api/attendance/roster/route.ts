@@ -9,7 +9,10 @@ type CleanMemberInput = Record<string, string | number | boolean | null>;
 function cleanMemberInput(body: Record<string, unknown>): CleanMemberInput {
   const memberType = body.member_type as AttendanceMemberType;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const grade = memberType === 'student' ? Number(body.grade) : null;
+  const rawGrade = Number(body.grade);
+  const grade = memberType === 'student'
+    ? rawGrade
+    : (body.grade === '' || body.grade === null || body.grade === undefined || rawGrade === 0 ? null : rawGrade);
   const studentKind = memberType === 'student'
     ? (body.student_kind as AttendanceStudentKind || 'enrolled')
     : null;
@@ -22,6 +25,9 @@ function cleanMemberInput(body: Record<string, unknown>): CleanMemberInput {
   }
   if (memberType === 'student' && (grade === null || ![1, 2, 3].includes(grade))) {
     throw new Error('학생 학년을 선택해주세요');
+  }
+  if (memberType === 'teacher' && grade !== null && ![1, 2, 3].includes(grade)) {
+    throw new Error('교사 학년은 없음 또는 1~3학년만 선택할 수 있습니다');
   }
   if (studentKind && !['enrolled', 'newcomer'].includes(studentKind)) {
     throw new Error('등록 유형이 올바르지 않습니다');

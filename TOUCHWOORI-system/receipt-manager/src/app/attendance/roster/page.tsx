@@ -2,9 +2,9 @@
 
 export const runtime = 'edge';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ClipboardPaste, Pencil, Plus, Trash2, UserRoundCog } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Pencil, Save, Trash2, UserRoundCog } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
@@ -38,6 +38,24 @@ interface BulkStudentRow {
   error: string | null;
 }
 
+type StudentQuickStatus = 'enrolled' | 'newcomer' | 'long_absent';
+
+interface TeacherQuickForm {
+  name: string;
+  grade: number;
+  is_homeroom: boolean;
+  position: string;
+  memo: string;
+}
+
+interface StudentQuickForm {
+  name: string;
+  grade: number;
+  homeroom_teacher_id: string;
+  status: StudentQuickStatus;
+  memo: string;
+}
+
 const GRADE_STYLES: Record<number, string> = {
   1: 'bg-amber-50 text-amber-700',
   2: 'bg-blue-50 text-blue-700',
@@ -57,6 +75,24 @@ const EMPTY_FORM: MemberForm = {
   memo: '',
 };
 
+const EMPTY_TEACHER_QUICK_FORM: TeacherQuickForm = {
+  name: '',
+  grade: 0,
+  is_homeroom: false,
+  position: '',
+  memo: '',
+};
+
+const EMPTY_STUDENT_QUICK_FORM: StudentQuickForm = {
+  name: '',
+  grade: 1,
+  homeroom_teacher_id: '',
+  status: 'enrolled',
+  memo: '',
+};
+
+const QUICK_FIELD_CLASS = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100';
+
 export default function AttendanceRosterPage() {
   const { activeDept } = useActiveDept();
   const toast = useToast();
@@ -72,6 +108,11 @@ export default function AttendanceRosterPage() {
   const [bulkTeacherId, setBulkTeacherId] = useState('');
   const [bulkStudentKind, setBulkStudentKind] = useState<AttendanceStudentKind>('enrolled');
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [teacherQuickForm, setTeacherQuickForm] = useState<TeacherQuickForm>(EMPTY_TEACHER_QUICK_FORM);
+  const [studentQuickForm, setStudentQuickForm] = useState<StudentQuickForm>(EMPTY_STUDENT_QUICK_FORM);
+  const [quickSubmitting, setQuickSubmitting] = useState<AttendanceMemberType | null>(null);
+  const teacherNameRef = useRef<HTMLInputElement>(null);
+  const studentNameRef = useRef<HTMLInputElement>(null);
 
   const loadMembers = useCallback(async () => {
     if (!activeDept) return;
@@ -93,18 +134,12 @@ export default function AttendanceRosterPage() {
     loadMembers();
   }, [loadMembers]);
 
-  const openAdd = (type: AttendanceMemberType) => {
-    setEditingId(null);
-    setForm({ ...EMPTY_FORM, member_type: type });
-    setModalOpen(true);
-  };
-
   const openEdit = (member: AttendanceMember) => {
     setEditingId(member.id);
     setForm({
       member_type: member.member_type,
       name: member.name,
-      grade: member.grade || 1,
+      grade: member.grade || (member.member_type === 'student' ? 1 : 0),
       position: member.position || '',
       is_homeroom: member.is_homeroom,
       student_kind: member.student_kind || 'enrolled',
@@ -114,6 +149,64 @@ export default function AttendanceRosterPage() {
       memo: member.memo || '',
     });
     setModalOpen(true);
+  };
+
+  const saveQuickMember = async (event: React.FormEvent, memberType: AttendanceMemberType) => {
+    event.preventDefault();
+    const quickForm = memberType === 'teacher' ? teacherQuickForm : studentQuickForm;
+    if (!quickForm.name.trim()) {
+      toast.error('이름을 입력해주세요');
+      return;
+    }
+
+    setQuickSubmitting(memberType);
+    try {
+      const studentStatus = memberType === 'student' ? studentQuickForm.status : null;
+      const payload = memberType === 'teacher'
+        ? {
+            member_type: 'teacher',
+            ...teacherQuickForm,
+            grade: teacherQuickForm.grade || null,
+            is_active: true,
+          }
+        : {
+            member_type: 'student',
+            name: studentQuickForm.name,
+            grade: studentQuickForm.grade,
+            homeroom_teacher_id: studentQuickForm.homeroom_teacher_id,
+            student_kind: studentStatus === 'newcomer' ? 'newcomer' : 'enrolled',
+            is_long_absent: studentStatus === 'long_absent',
+            memo: studentQuickForm.memo,
+            is_active: true,
+          };
+      const res = await fetch('/api/attendance/roster', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ department_id: activeDept, ...payload }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      toast.success(`${quickForm.name.trim()} ${memberType === 'teacher' ? '교사' : '학생'}을 등록했습니다`);
+      if (memberType === 'teacher') {
+        setTeacherQuickForm(EMPTY_TEACHER_QUICK_FORM);
+      } else {
+        setStudentQuickForm((current) => ({
+          ...EMPTY_STUDENT_QUICK_FORM,
+          grade: current.grade,
+          homeroom_teacher_id: current.homeroom_teacher_id,
+          status: current.status,
+        }));
+      }
+      await loadMembers();
+      requestAnimationFrame(() => {
+        (memberType === 'teacher' ? teacherNameRef : studentNameRef).current?.focus();
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '등록에 실패했습니다');
+    } finally {
+      setQuickSubmitting(null);
+    }
   };
 
   const saveMember = async (event: React.FormEvent) => {
@@ -294,7 +387,13 @@ export default function AttendanceRosterPage() {
           {member.is_long_absent && <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">장결</span>}
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          {member.member_type === 'teacher' ? member.position || '교사' : (
+          {member.member_type === 'teacher' ? (
+            <>
+              {member.grade ? `${member.grade}학년` : '학년 없음'}
+              {' · '}
+              {member.position || '교사'}
+            </>
+          ) : (
             <>
               <span className={`rounded-full px-2 py-0.5 font-semibold ${GRADE_STYLES[member.grade || 1]}`}>{member.grade}학년</span>
               {member.homeroom_teacher?.name ? ` · 담임 ${member.homeroom_teacher.name}` : ''}
@@ -344,14 +443,66 @@ export default function AttendanceRosterPage() {
         {loading ? (
           <TableSkeleton rows={8} cols={3} />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-5">
             <section className="glass-panel overflow-hidden rounded-2xl">
               <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
                 <div>
                   <h2 className="font-bold text-gray-900">교사 명단</h2>
-                  <p className="text-xs text-gray-500">{teachers.length}명 등록</p>
+                  <p className="text-xs text-gray-500">{teachers.length}명 등록 · Tab으로 이동하고 Enter로 저장</p>
                 </div>
-                <Button size="sm" onClick={() => openAdd('teacher')}><Plus className="h-4 w-4" />교사 추가</Button>
+              </div>
+              <div className="overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4">
+                <div className="min-w-[900px]">
+                  <div className="mb-1.5 grid grid-cols-[1.1fr_120px_120px_1fr_1.4fr_92px] gap-2 px-1 text-xs font-semibold text-gray-500">
+                    <span>이름</span><span>학년</span><span>담임</span><span>직분</span><span>메모</span><span />
+                  </div>
+                  <form
+                    onSubmit={(event) => saveQuickMember(event, 'teacher')}
+                    className="grid grid-cols-[1.1fr_120px_120px_1fr_1.4fr_92px] gap-2"
+                  >
+                    <input
+                      ref={teacherNameRef}
+                      required
+                      value={teacherQuickForm.name}
+                      onChange={(event) => setTeacherQuickForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="교사 이름"
+                      className={QUICK_FIELD_CLASS}
+                    />
+                    <select
+                      value={teacherQuickForm.grade}
+                      onChange={(event) => setTeacherQuickForm((current) => ({ ...current, grade: Number(event.target.value) }))}
+                      className={QUICK_FIELD_CLASS}
+                    >
+                      <option value={0}>학년 없음</option>
+                      <option value={1}>1학년</option>
+                      <option value={2}>2학년</option>
+                      <option value={3}>3학년</option>
+                    </select>
+                    <select
+                      value={teacherQuickForm.is_homeroom ? 'homeroom' : 'none'}
+                      onChange={(event) => setTeacherQuickForm((current) => ({ ...current, is_homeroom: event.target.value === 'homeroom' }))}
+                      className={QUICK_FIELD_CLASS}
+                    >
+                      <option value="none">없음</option>
+                      <option value="homeroom">담임</option>
+                    </select>
+                    <input
+                      value={teacherQuickForm.position}
+                      onChange={(event) => setTeacherQuickForm((current) => ({ ...current, position: event.target.value }))}
+                      placeholder="교사, 부장교사"
+                      className={QUICK_FIELD_CLASS}
+                    />
+                    <input
+                      value={teacherQuickForm.memo}
+                      onChange={(event) => setTeacherQuickForm((current) => ({ ...current, memo: event.target.value }))}
+                      placeholder="메모"
+                      className={QUICK_FIELD_CLASS}
+                    />
+                    <Button type="submit" size="sm" loading={quickSubmitting === 'teacher'} disabled={quickSubmitting !== null}>
+                      <Save className="h-4 w-4" />저장
+                    </Button>
+                  </form>
+                </div>
               </div>
               <div>{teachers.map(renderMember)}</div>
             </section>
@@ -359,13 +510,69 @@ export default function AttendanceRosterPage() {
               <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
                 <div>
                   <h2 className="font-bold text-gray-900">학생 명단</h2>
-                  <p className="text-xs text-gray-500">{students.length}명 등록</p>
+                  <p className="text-xs text-gray-500">{students.length}명 등록 · Tab으로 이동하고 Enter로 저장</p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}>
                     <ClipboardPaste className="h-4 w-4" />일괄 등록
                   </Button>
-                  <Button size="sm" onClick={() => openAdd('student')}><Plus className="h-4 w-4" />학생 추가</Button>
+                </div>
+              </div>
+              <div className="overflow-x-auto border-b border-gray-100 bg-primary-50/40 px-4 py-4">
+                <div className="min-w-[960px]">
+                  <div className="mb-1.5 grid grid-cols-[1.1fr_120px_1fr_150px_1.4fr_92px] gap-2 px-1 text-xs font-semibold text-gray-500">
+                    <span>이름</span><span>학년</span><span>담임</span><span>구분</span><span>메모</span><span />
+                  </div>
+                  <form
+                    onSubmit={(event) => saveQuickMember(event, 'student')}
+                    className="grid grid-cols-[1.1fr_120px_1fr_150px_1.4fr_92px] gap-2"
+                  >
+                    <input
+                      ref={studentNameRef}
+                      required
+                      value={studentQuickForm.name}
+                      onChange={(event) => setStudentQuickForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="학생 이름"
+                      className={QUICK_FIELD_CLASS}
+                    />
+                    <select
+                      value={studentQuickForm.grade}
+                      onChange={(event) => setStudentQuickForm((current) => ({ ...current, grade: Number(event.target.value) }))}
+                      className={QUICK_FIELD_CLASS}
+                    >
+                      <option value={1}>1학년</option>
+                      <option value={2}>2학년</option>
+                      <option value={3}>3학년</option>
+                    </select>
+                    <select
+                      value={studentQuickForm.homeroom_teacher_id}
+                      onChange={(event) => setStudentQuickForm((current) => ({ ...current, homeroom_teacher_id: event.target.value }))}
+                      className={QUICK_FIELD_CLASS}
+                    >
+                      <option value="">담임 없음</option>
+                      {selectableTeachers.map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>{teacher.name}{teacher.is_homeroom ? ' (담임)' : ''}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={studentQuickForm.status}
+                      onChange={(event) => setStudentQuickForm((current) => ({ ...current, status: event.target.value as StudentQuickStatus }))}
+                      className={QUICK_FIELD_CLASS}
+                    >
+                      <option value="enrolled">재적 학생</option>
+                      <option value="newcomer">새친구</option>
+                      <option value="long_absent">장결자</option>
+                    </select>
+                    <input
+                      value={studentQuickForm.memo}
+                      onChange={(event) => setStudentQuickForm((current) => ({ ...current, memo: event.target.value }))}
+                      placeholder="메모"
+                      className={QUICK_FIELD_CLASS}
+                    />
+                    <Button type="submit" size="sm" loading={quickSubmitting === 'student'} disabled={quickSubmitting !== null}>
+                      <Save className="h-4 w-4" />저장
+                    </Button>
+                  </form>
                 </div>
               </div>
               <div>{students.map(renderMember)}</div>
@@ -452,6 +659,32 @@ export default function AttendanceRosterPage() {
             </>
           ) : (
             <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">학년</label>
+                  <select
+                    value={form.grade}
+                    onChange={(event) => setForm((current) => ({ ...current, grade: Number(event.target.value) }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value={0}>학년 없음</option>
+                    <option value={1}>1학년</option>
+                    <option value={2}>2학년</option>
+                    <option value={3}>3학년</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">담임</label>
+                  <select
+                    value={form.is_homeroom ? 'homeroom' : 'none'}
+                    onChange={(event) => setForm((current) => ({ ...current, is_homeroom: event.target.value === 'homeroom' }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="none">없음</option>
+                    <option value="homeroom">담임</option>
+                  </select>
+                </div>
+              </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">직분</label>
                 <input
@@ -461,15 +694,6 @@ export default function AttendanceRosterPage() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={form.is_homeroom}
-                  onChange={(event) => setForm((current) => ({ ...current, is_homeroom: event.target.checked }))}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600"
-                />
-                담임선생님으로 표시
-              </label>
             </>
           )}
 
