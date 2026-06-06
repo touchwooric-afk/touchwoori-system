@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useUser } from '@/hooks/useUser';
 import { formatCurrency } from '@/lib/format';
 import {
@@ -13,6 +14,8 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  MessageSquareText,
+  PenLine,
 } from 'lucide-react';
 import { CardSkeleton } from '@/components/ui/Skeleton';
 import AppShell from '@/components/layout/AppShell';
@@ -22,6 +25,7 @@ import {
 } from 'recharts';
 import { createClient } from '@/lib/supabase';
 import { useActiveDept } from '@/contexts/DepartmentContext';
+import type { BoardPost } from '@/types';
 
 interface DashboardStats {
   pendingUsers?: number;
@@ -50,6 +54,58 @@ const PIE_COLORS = [
   '#6366f1', '#8b5cf6', '#06b6d4', '#10b981',
   '#f59e0b', '#ef4444', '#ec4899', '#64748b',
 ];
+
+function boardDate(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value));
+}
+
+function RecentBoardPosts({ posts, loading }: { posts: BoardPost[]; loading: boolean }) {
+  return (
+    <section className="glass-panel overflow-hidden rounded-2xl">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 sm:px-5">
+        <div className="flex items-center gap-2">
+          <MessageSquareText className="h-5 w-5 text-primary-600" />
+          <div>
+            <h2 className="font-bold text-gray-900">소통 게시판</h2>
+            <p className="text-xs text-gray-500">모든 부서가 함께 보는 최근 소식</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/board/new" className="flex items-center gap-1 rounded-lg bg-primary-50 px-2.5 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-100">
+            <PenLine className="h-3.5 w-3.5" />글쓰기
+          </Link>
+          <Link href="/board" className="text-xs font-semibold text-gray-500 hover:text-primary-700">전체보기</Link>
+        </div>
+      </div>
+      {loading ? (
+        <div className="space-y-3 p-5">
+          {Array.from({ length: 3 }, (_, index) => <div key={index} className="h-5 animate-pulse rounded bg-gray-100" />)}
+        </div>
+      ) : posts.length === 0 ? (
+        <div className="p-8 text-center text-sm text-gray-400">아직 등록된 게시글이 없습니다.</div>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {posts.map((post) => (
+            <Link key={post.id} href={`/board/${post.id}`} className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-3 px-4 py-3 hover:bg-primary-50/50 sm:grid-cols-[72px_minmax(0,1fr)_120px] sm:px-5">
+              <time className="text-xs tabular-nums text-gray-400">{boardDate(post.created_at)}</time>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-sm font-medium text-gray-800">{post.title}</span>
+                {(post.comment_count || 0) > 0 && <span className="shrink-0 text-xs font-semibold text-primary-600">[{post.comment_count}]</span>}
+              </div>
+              <span className="col-start-2 truncate text-xs text-gray-500 sm:col-start-auto sm:text-right">
+                {post.author?.name} · {post.author?.department_id}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 /** 만원 단위 Y축 포맷 */
 function formatWon(v: number): string {
@@ -398,6 +454,8 @@ export default function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [chartLoading, setChartLoading] = useState(true);
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);
+  const [boardLoading, setBoardLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !activeDept) return;
@@ -446,6 +504,16 @@ export default function DashboardClient() {
     fetchStats();
     fetchCharts();
   }, [user, activeDept, isCrossDept]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/board/posts?recent=true')
+      .then(async (res) => {
+        const json = await res.json();
+        if (res.ok) setBoardPosts(json.data || []);
+      })
+      .finally(() => setBoardLoading(false));
+  }, [user]);
 
   if (!user) return null;
 
@@ -507,6 +575,8 @@ export default function DashboardClient() {
             )}
           </div>
         )}
+
+        <RecentBoardPosts posts={boardPosts} loading={boardLoading} />
 
         {/* 차트 */}
         {showCharts && (

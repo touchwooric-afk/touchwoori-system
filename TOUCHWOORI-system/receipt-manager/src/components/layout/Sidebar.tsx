@@ -18,6 +18,7 @@ import {
   ChartNoAxesColumnIncreasing,
   UserRoundCog,
   UsersRound,
+  MessageSquareText,
 } from 'lucide-react';
 import type { Role } from '@/types';
 
@@ -48,7 +49,10 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   // 공통: 대시보드
   groups.push({
     title: '홈',
-    items: [{ label: '대시보드', href: '/', icon: LayoutDashboard }],
+    items: [
+      { label: '대시보드', href: '/', icon: LayoutDashboard },
+      { label: '소통 게시판', href: '/board', icon: MessageSquareText },
+    ],
   });
 
   const isMaster     = role === 'master';

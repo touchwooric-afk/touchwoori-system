@@ -147,6 +147,34 @@ export interface UserDepartment {
   created_at: string;
 }
 
+export interface BoardAuthor {
+  id: string;
+  name: string;
+  department_id: string;
+  position: string;
+}
+
+export interface BoardPost {
+  id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  author?: BoardAuthor;
+  comment_count?: number;
+}
+
+export interface BoardComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  author?: BoardAuthor;
+}
+
 export interface AttendanceMember {
   id: string;
   department_id: string;
