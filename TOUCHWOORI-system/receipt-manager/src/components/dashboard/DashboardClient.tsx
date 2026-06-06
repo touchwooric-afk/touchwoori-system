@@ -118,7 +118,7 @@ function formatWon(v: number): string {
 // 부서명 → Storage 파일명 매핑 (한국어 파일명 미지원으로 영문 슬러그 사용)
 const DEPARTMENT_BANNER_MAP: Record<string, string> = {
   '고등부': 'godeungbu',
-  // 부서 추가 시 여기에 등록: '중등부': 'jungdeungbu'
+  '중등부': 'jungdeungbu',
 };
 
 function DepartmentLogo({ departmentId }: { departmentId: string }) {
