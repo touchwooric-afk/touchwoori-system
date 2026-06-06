@@ -196,17 +196,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: access.error }, { status: access.status });
       }
       if (bulkMembers.length === 0 || bulkMembers.length > 200) {
-        return NextResponse.json({ error: '학생은 한 번에 1명 이상 200명 이하로 등록할 수 있습니다' }, { status: 400 });
+        return NextResponse.json({ error: '명단은 한 번에 1명 이상 200명 이하로 등록할 수 있습니다' }, { status: 400 });
       }
 
       const inputs: CleanMemberInput[] = bulkMembers.map((member, index): CleanMemberInput => {
         if (!member || typeof member !== 'object' || Array.isArray(member)) {
           throw new Error(`${index + 1}번째 행의 형식이 올바르지 않습니다`);
         }
-        const input = cleanMemberInput({
-          ...(member as Record<string, unknown>),
-          member_type: 'student',
-        });
+        const input = cleanMemberInput(member as Record<string, unknown>);
         return { ...input, department_id: access.departmentId };
       });
 
@@ -214,9 +211,9 @@ export async function POST(request: NextRequest) {
 
       const inputKeys = new Set<string>();
       for (const input of inputs) {
-        const key = `${input.name}::${input.grade}`;
+        const key = `${input.member_type}::${input.name}::${input.grade ?? ''}`;
         if (inputKeys.has(key)) {
-          throw new Error(`${input.name} (${input.grade}학년) 학생이 입력 목록에 중복되어 있습니다`);
+          throw new Error(`${input.name} 명단이 입력 목록에 중복되어 있습니다`);
         }
         inputKeys.add(key);
       }
@@ -224,19 +221,20 @@ export async function POST(request: NextRequest) {
       const names = [...new Set(inputs.map((input) => String(input.name)))];
       const { data: existingMembers, error: existingError } = await access.serviceClient
         .from('attendance_members')
-        .select('name, grade')
+        .select('member_type, name, grade')
         .eq('department_id', access.departmentId)
-        .eq('member_type', 'student')
         .eq('is_active', true)
         .in('name', names);
       if (existingError) throw new Error(existingError.message);
 
       const existingKeys = new Set(
-        (existingMembers || []).map((member) => `${member.name}::${member.grade}`)
+        (existingMembers || []).map((member) => `${member.member_type}::${member.name}::${member.grade ?? ''}`)
       );
-      const duplicate = inputs.find((input) => existingKeys.has(`${input.name}::${input.grade}`));
+      const duplicate = inputs.find((input) => existingKeys.has(
+        `${input.member_type}::${input.name}::${input.grade ?? ''}`
+      ));
       if (duplicate) {
-        throw new Error(`${duplicate.name} (${duplicate.grade}학년) 학생은 이미 재적 명단에 있습니다`);
+        throw new Error(`${duplicate.name}은(는) 이미 명단에 있습니다`);
       }
 
       const { data, error } = await access.serviceClient
@@ -244,7 +242,7 @@ export async function POST(request: NextRequest) {
         .insert(inputs)
         .select('*');
       if (error) {
-        return NextResponse.json({ error: `학생 일괄 등록에 실패했습니다: ${error.message}` }, { status: 500 });
+        return NextResponse.json({ error: `명단 등록에 실패했습니다: ${error.message}` }, { status: 500 });
       }
 
       const members = await attachHomeroomTeachers(
