@@ -2,9 +2,9 @@
 
 export const runtime = 'edge';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Plus, Trash2, UserRoundCog } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Pencil, Plus, Trash2, UserRoundCog } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
@@ -24,6 +24,18 @@ interface MemberForm {
   homeroom_teacher_id: string;
   is_active: boolean;
   memo: string;
+}
+
+interface BulkStudentRow {
+  line: number;
+  name: string;
+  grade: number;
+  homeroomTeacherId: string;
+  homeroomTeacherName: string;
+  studentKind: AttendanceStudentKind;
+  isLongAbsent: boolean;
+  memo: string;
+  error: string | null;
 }
 
 const GRADE_STYLES: Record<number, string> = {
@@ -54,6 +66,12 @@ export default function AttendanceRosterPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<MemberForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkGrade, setBulkGrade] = useState(1);
+  const [bulkTeacherId, setBulkTeacherId] = useState('');
+  const [bulkStudentKind, setBulkStudentKind] = useState<AttendanceStudentKind>('enrolled');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const loadMembers = useCallback(async () => {
     if (!activeDept) return;
@@ -130,6 +148,119 @@ export default function AttendanceRosterPage() {
       Number(a.is_long_absent) - Number(b.is_long_absent)
       || (a.grade || 0) - (b.grade || 0)
       || a.name.localeCompare(b.name, 'ko'));
+
+  const bulkRows = useMemo<BulkStudentRow[]>(() => {
+    const existingKeys = new Set(
+      members
+        .filter((member) => member.member_type === 'student' && member.is_active)
+        .map((member) => `${member.name.trim()}::${member.grade}`)
+    );
+    const seenKeys = new Set<string>();
+    const defaultTeacher = selectableTeachers.find((teacher) => teacher.id === bulkTeacherId);
+
+    return bulkText
+      .split(/\r?\n/)
+      .map((raw, index) => ({ raw: raw.trim(), line: index + 1 }))
+      .filter(({ raw }) => raw)
+      .filter(({ raw }, index) => {
+        if (index !== 0) return true;
+        const firstColumn = raw.split(raw.includes('\t') ? '\t' : ',')[0].trim().toLowerCase();
+        return firstColumn !== '이름' && firstColumn !== 'name';
+      })
+      .map(({ raw, line }) => {
+        const separator = raw.includes('\t') ? '\t' : ',';
+        const columns = raw.split(separator).map((value) => value.trim());
+        const name = columns[0] || '';
+        const gradeRaw = columns[1] || '';
+        const teacherRaw = columns[2] || '';
+        const kindRaw = (columns[3] || '').toLowerCase();
+        const longAbsentRaw = (columns[4] || '').toLowerCase();
+        const memo = columns.slice(5).join(separator).trim();
+
+        const gradeMatch = gradeRaw.match(/[1-3]/);
+        const grade = gradeRaw ? Number(gradeMatch?.[0] || 0) : bulkGrade;
+        const teacher = teacherRaw
+          ? selectableTeachers.find((item) => (
+              item.name.trim() === teacherRaw.replace(/\s*선생님$/, '').trim()
+            ))
+          : defaultTeacher;
+
+        let studentKind = bulkStudentKind;
+        let kindError = false;
+        if (kindRaw) {
+          if (kindRaw.includes('새') || kindRaw === 'newcomer') studentKind = 'newcomer';
+          else if (kindRaw.includes('재적') || kindRaw === 'enrolled') studentKind = 'enrolled';
+          else kindError = true;
+        }
+
+        const isLongAbsent = ['장결', 'y', 'yes', 'true', '1', '예'].includes(longAbsentRaw);
+        const key = `${name}::${grade}`;
+        let error: string | null = null;
+        if (!name) error = '이름을 입력해주세요';
+        else if (name.length > 50) error = '이름은 50자 이하로 입력해주세요';
+        else if (![1, 2, 3].includes(grade)) error = '학년은 1~3만 가능합니다';
+        else if (teacherRaw && !teacher) error = `담임 '${teacherRaw}'을 찾을 수 없습니다`;
+        else if (kindError) error = '구분은 재적 또는 새친구로 입력해주세요';
+        else if (memo.length > 300) error = '메모는 300자 이하로 입력해주세요';
+        else if (existingKeys.has(key)) error = '이미 재적 명단에 있습니다';
+        else if (seenKeys.has(key)) error = '입력 목록에 중복되어 있습니다';
+        seenKeys.add(key);
+
+        return {
+          line,
+          name,
+          grade,
+          homeroomTeacherId: teacher?.id || '',
+          homeroomTeacherName: teacher?.name || '',
+          studentKind,
+          isLongAbsent,
+          memo,
+          error,
+        };
+      });
+  }, [bulkGrade, bulkStudentKind, bulkTeacherId, bulkText, members, selectableTeachers]);
+
+  const bulkErrorCount = bulkRows.filter((row) => row.error).length;
+
+  const closeBulkModal = () => {
+    if (bulkSubmitting) return;
+    setBulkOpen(false);
+    setBulkText('');
+  };
+
+  const saveBulkStudents = async () => {
+    if (!activeDept || bulkRows.length === 0 || bulkErrorCount > 0) return;
+    setBulkSubmitting(true);
+    try {
+      const res = await fetch('/api/attendance/roster', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          department_id: activeDept,
+          members: bulkRows.map((row) => ({
+            member_type: 'student',
+            name: row.name,
+            grade: row.grade,
+            student_kind: row.studentKind,
+            is_long_absent: row.isLongAbsent,
+            homeroom_teacher_id: row.homeroomTeacherId,
+            is_active: true,
+            memo: row.memo,
+          })),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      toast.success(`학생 ${json.count || bulkRows.length}명을 일괄 등록했습니다`);
+      setBulkOpen(false);
+      setBulkText('');
+      await loadMembers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '학생 일괄 등록에 실패했습니다');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   const removeTeacher = async () => {
     if (!editingId || form.member_type !== 'teacher') return;
@@ -230,7 +361,12 @@ export default function AttendanceRosterPage() {
                   <h2 className="font-bold text-gray-900">학생 명단</h2>
                   <p className="text-xs text-gray-500">{students.length}명 등록</p>
                 </div>
-                <Button size="sm" onClick={() => openAdd('student')}><Plus className="h-4 w-4" />학생 추가</Button>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}>
+                    <ClipboardPaste className="h-4 w-4" />일괄 등록
+                  </Button>
+                  <Button size="sm" onClick={() => openAdd('student')}><Plus className="h-4 w-4" />학생 추가</Button>
+                </div>
               </div>
               <div>{students.map(renderMember)}</div>
             </section>
@@ -366,6 +502,141 @@ export default function AttendanceRosterPage() {
             </div>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={bulkOpen}
+        onClose={closeBulkModal}
+        title="학생 일괄 등록"
+        size="xl"
+        preventClose={Boolean(bulkText) && !bulkSubmitting}
+      >
+        <div className="space-y-5">
+          <div className="rounded-xl border border-primary-100 bg-primary-50/70 p-4 text-sm text-gray-700">
+            <p className="font-semibold text-primary-800">빠른 입력</p>
+            <p className="mt-1">학생 이름을 한 줄에 한 명씩 붙여넣으면 아래 공통 설정이 적용됩니다.</p>
+            <p className="mt-2 text-xs text-gray-500">
+              엑셀 상세 입력: 이름 / 학년 / 담임 / 구분 / 장결 / 메모 순서의 셀을 복사해 붙여넣으세요.
+              쉼표로 구분한 입력도 지원합니다.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">공통 학년</label>
+              <select
+                value={bulkGrade}
+                onChange={(event) => setBulkGrade(Number(event.target.value))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value={1}>1학년</option>
+                <option value={2}>2학년</option>
+                <option value={3}>3학년</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">공통 담임</label>
+              <select
+                value={bulkTeacherId}
+                onChange={(event) => setBulkTeacherId(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">담임 미지정</option>
+                {selectableTeachers.map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">공통 등록 구분</label>
+              <select
+                value={bulkStudentKind}
+                onChange={(event) => setBulkStudentKind(event.target.value as AttendanceStudentKind)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="enrolled">재적 학생</option>
+                <option value="newcomer">새친구</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <label className="block text-sm font-medium text-gray-700">학생 명단 붙여넣기</label>
+              <span className="text-xs text-gray-500">최대 200명</span>
+            </div>
+            <textarea
+              value={bulkText}
+              onChange={(event) => setBulkText(event.target.value)}
+              rows={8}
+              placeholder={'김민준\n이서연\n박지후\n\n또는\n김민준\t1\t홍길동\t재적\t\t축구부'}
+              className="w-full rounded-xl border border-gray-300 px-3 py-3 font-mono text-sm leading-6 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+            />
+          </div>
+
+          {bulkRows.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-gray-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="text-sm font-semibold text-gray-800">등록 미리보기</p>
+                <div className="flex gap-2 text-xs font-semibold">
+                  <span className="rounded-full bg-success-50 px-2.5 py-1 text-success-700">
+                    등록 가능 {bulkRows.length - bulkErrorCount}명
+                  </span>
+                  {bulkErrorCount > 0 && (
+                    <span className="rounded-full bg-danger-50 px-2.5 py-1 text-danger-700">
+                      확인 필요 {bulkErrorCount}명
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="max-h-72 overflow-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-white text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">행</th>
+                      <th className="px-3 py-2 font-medium">이름</th>
+                      <th className="px-3 py-2 font-medium">학년</th>
+                      <th className="px-3 py-2 font-medium">담임</th>
+                      <th className="px-3 py-2 font-medium">구분</th>
+                      <th className="px-3 py-2 font-medium">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {bulkRows.map((row) => (
+                      <tr key={`${row.line}-${row.name}`} className={row.error ? 'bg-danger-50/60' : 'bg-white'}>
+                        <td className="px-3 py-2 text-gray-400">{row.line}</td>
+                        <td className="px-3 py-2 font-semibold text-gray-900">{row.name || '-'}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.grade || '-'}학년</td>
+                        <td className="px-3 py-2 text-gray-600">{row.homeroomTeacherName || '미지정'}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.studentKind === 'newcomer' ? '새친구' : '재적'}</td>
+                        <td className={`px-3 py-2 ${row.error ? 'font-medium text-danger-700' : 'text-success-700'}`}>
+                          {row.error || (row.isLongAbsent ? '등록 가능 · 장결' : '등록 가능')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+            <p className="text-xs text-gray-500">
+              오류가 있는 행은 수정한 뒤 등록할 수 있습니다. 저장은 전체 명단에 한 번에 적용됩니다.
+            </p>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={closeBulkModal} disabled={bulkSubmitting}>취소</Button>
+              <Button
+                type="button"
+                onClick={saveBulkStudents}
+                loading={bulkSubmitting}
+                disabled={bulkRows.length === 0 || bulkRows.length > 200 || bulkErrorCount > 0}
+              >
+                학생 {bulkRows.length}명 등록
+              </Button>
+            </div>
+          </div>
+        </div>
       </Modal>
     </AppShell>
   );

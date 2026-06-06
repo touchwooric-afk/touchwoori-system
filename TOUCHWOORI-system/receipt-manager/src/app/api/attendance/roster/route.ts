@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAttendanceAccess } from '@/lib/attendance-server';
 import type { AttendanceMemberType, AttendanceStudentKind } from '@/types';
 
-function cleanMemberInput(body: Record<string, unknown>) {
+type CleanMemberInput = Record<string, string | number | boolean | null>;
+
+function cleanMemberInput(body: Record<string, unknown>): CleanMemberInput {
   const memberType = body.member_type as AttendanceMemberType;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const grade = memberType === 'student' ? Number(body.grade) : null;
@@ -15,11 +17,17 @@ function cleanMemberInput(body: Record<string, unknown>) {
   if (!['student', 'teacher'].includes(memberType) || !name) {
     throw new Error('이름과 구분을 입력해주세요');
   }
+  if (name.length > 50) {
+    throw new Error('이름은 50자 이하로 입력해주세요');
+  }
   if (memberType === 'student' && (grade === null || ![1, 2, 3].includes(grade))) {
     throw new Error('학생 학년을 선택해주세요');
   }
   if (studentKind && !['enrolled', 'newcomer'].includes(studentKind)) {
     throw new Error('등록 유형이 올바르지 않습니다');
+  }
+  if (typeof body.memo === 'string' && body.memo.trim().length > 300) {
+    throw new Error('메모는 300자 이하로 입력해주세요');
   }
 
   const input: Record<string, string | number | boolean | null> = {
@@ -53,7 +61,7 @@ function cleanMemberInput(body: Record<string, unknown>) {
 async function validateHomeroomTeacher(
   serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>,
   departmentId: string,
-  input: Record<string, string | number | boolean | null>
+  input: CleanMemberInput
 ) {
   if (input.member_type !== 'student' || typeof input.homeroom_teacher_id !== 'string') return;
   const { data } = await serviceClient
@@ -65,6 +73,33 @@ async function validateHomeroomTeacher(
     .eq('is_active', true)
     .maybeSingle();
   if (!data) throw new Error('선택한 담임선생님을 찾을 수 없습니다');
+}
+
+async function validateHomeroomTeachers(
+  serviceClient: ReturnType<typeof import('@/lib/supabase-server').createServiceClient>,
+  departmentId: string,
+  inputs: CleanMemberInput[]
+) {
+  const teacherIds = [...new Set(
+    inputs
+      .map((input) => input.homeroom_teacher_id)
+      .filter((id): id is string => typeof id === 'string')
+  )];
+  if (!teacherIds.length) return;
+
+  const { data, error } = await serviceClient
+    .from('attendance_members')
+    .select('id')
+    .eq('department_id', departmentId)
+    .eq('member_type', 'teacher')
+    .eq('is_active', true)
+    .in('id', teacherIds);
+  if (error) throw new Error(error.message);
+
+  const foundIds = new Set((data || []).map((teacher) => teacher.id));
+  if (teacherIds.some((id) => !foundIds.has(id))) {
+    throw new Error('선택한 담임선생님 중 현재 명단에 없는 교사가 있습니다');
+  }
 }
 
 async function attachHomeroomTeachers(
@@ -148,6 +183,71 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as Record<string, unknown>;
+    const bulkMembers = Array.isArray(body.members) ? body.members : null;
+    if (bulkMembers) {
+      const access = await getAttendanceAccess('manage', body.department_id as string | undefined);
+      if ('error' in access) {
+        return NextResponse.json({ error: access.error }, { status: access.status });
+      }
+      if (bulkMembers.length === 0 || bulkMembers.length > 200) {
+        return NextResponse.json({ error: '학생은 한 번에 1명 이상 200명 이하로 등록할 수 있습니다' }, { status: 400 });
+      }
+
+      const inputs: CleanMemberInput[] = bulkMembers.map((member, index): CleanMemberInput => {
+        if (!member || typeof member !== 'object' || Array.isArray(member)) {
+          throw new Error(`${index + 1}번째 행의 형식이 올바르지 않습니다`);
+        }
+        const input = cleanMemberInput({
+          ...(member as Record<string, unknown>),
+          member_type: 'student',
+        });
+        return { ...input, department_id: access.departmentId };
+      });
+
+      await validateHomeroomTeachers(access.serviceClient, access.departmentId, inputs);
+
+      const inputKeys = new Set<string>();
+      for (const input of inputs) {
+        const key = `${input.name}::${input.grade}`;
+        if (inputKeys.has(key)) {
+          throw new Error(`${input.name} (${input.grade}학년) 학생이 입력 목록에 중복되어 있습니다`);
+        }
+        inputKeys.add(key);
+      }
+
+      const names = [...new Set(inputs.map((input) => String(input.name)))];
+      const { data: existingMembers, error: existingError } = await access.serviceClient
+        .from('attendance_members')
+        .select('name, grade')
+        .eq('department_id', access.departmentId)
+        .eq('member_type', 'student')
+        .eq('is_active', true)
+        .in('name', names);
+      if (existingError) throw new Error(existingError.message);
+
+      const existingKeys = new Set(
+        (existingMembers || []).map((member) => `${member.name}::${member.grade}`)
+      );
+      const duplicate = inputs.find((input) => existingKeys.has(`${input.name}::${input.grade}`));
+      if (duplicate) {
+        throw new Error(`${duplicate.name} (${duplicate.grade}학년) 학생은 이미 재적 명단에 있습니다`);
+      }
+
+      const { data, error } = await access.serviceClient
+        .from('attendance_members')
+        .insert(inputs)
+        .select('*');
+      if (error) {
+        return NextResponse.json({ error: `학생 일괄 등록에 실패했습니다: ${error.message}` }, { status: 500 });
+      }
+
+      const members = await attachHomeroomTeachers(
+        access.serviceClient,
+        (data || []) as Record<string, unknown>[]
+      );
+      return NextResponse.json({ data: members, count: members.length }, { status: 201 });
+    }
+
     const isNewcomerAtSession = body.member_type === 'student'
       && body.student_kind === 'newcomer'
       && typeof body.session_id === 'string';
