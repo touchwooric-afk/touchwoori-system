@@ -9,10 +9,11 @@ type CleanMemberInput = Record<string, string | number | boolean | null>;
 function cleanMemberInput(body: Record<string, unknown>): CleanMemberInput {
   const memberType = body.member_type as AttendanceMemberType;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const isHomeroom = memberType === 'teacher' && Boolean(body.is_homeroom);
   const rawGrade = Number(body.grade);
   const grade = memberType === 'student'
     ? rawGrade
-    : (body.grade === '' || body.grade === null || body.grade === undefined || rawGrade === 0 ? null : rawGrade);
+    : (!isHomeroom || body.grade === '' || body.grade === null || body.grade === undefined || rawGrade === 0 ? null : rawGrade);
   const studentKind = memberType === 'student'
     ? (body.student_kind as AttendanceStudentKind || 'enrolled')
     : null;
@@ -43,7 +44,7 @@ function cleanMemberInput(body: Record<string, unknown>): CleanMemberInput {
     position: memberType === 'teacher' && typeof body.position === 'string'
       ? body.position.trim() || null
       : null,
-    is_homeroom: memberType === 'teacher' ? Boolean(body.is_homeroom) : false,
+    is_homeroom: isHomeroom,
     student_kind: studentKind,
     is_long_absent: memberType === 'student' ? Boolean(body.is_long_absent) : false,
     homeroom_teacher_id: memberType === 'student' && typeof body.homeroom_teacher_id === 'string' && body.homeroom_teacher_id
@@ -76,6 +77,7 @@ async function validateHomeroomTeacher(
     .eq('id', input.homeroom_teacher_id)
     .eq('department_id', departmentId)
     .eq('member_type', 'teacher')
+    .eq('is_homeroom', true)
     .eq('is_active', true)
     .maybeSingle();
   if (!data) throw new Error('선택한 담임선생님을 찾을 수 없습니다');
@@ -98,6 +100,7 @@ async function validateHomeroomTeachers(
     .select('id')
     .eq('department_id', departmentId)
     .eq('member_type', 'teacher')
+    .eq('is_homeroom', true)
     .eq('is_active', true)
     .in('id', teacherIds);
   if (error) throw new Error(error.message);

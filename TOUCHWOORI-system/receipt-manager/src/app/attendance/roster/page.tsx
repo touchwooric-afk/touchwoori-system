@@ -159,7 +159,7 @@ export default function AttendanceRosterPage() {
         const previous = current[current.length - 1];
         return [...current, {
           ...EMPTY_TEACHER_QUICK_FORM,
-          grade: previous.grade,
+          grade: previous.is_homeroom ? previous.grade : 0,
           is_homeroom: previous.is_homeroom,
           position: previous.position,
         }];
@@ -227,7 +227,7 @@ export default function AttendanceRosterPage() {
         ? teacherRows.filter((row) => row.name.trim()).map((row) => ({
             member_type: 'teacher',
             ...row,
-            grade: row.grade || null,
+            grade: row.is_homeroom ? row.grade || null : null,
             is_active: true,
           }))
         : studentRows.filter((row) => row.name.trim()).map((row) => ({
@@ -288,7 +288,7 @@ export default function AttendanceRosterPage() {
   };
 
   const teachers = members.filter((member) => member.member_type === 'teacher');
-  const selectableTeachers = teachers.filter((member) => member.is_active);
+  const selectableTeachers = teachers.filter((member) => member.is_active && member.is_homeroom);
   const students = members.filter((member) => member.member_type === 'student')
     .sort((a, b) =>
       Number(a.is_long_absent) - Number(b.is_long_absent)
@@ -403,8 +403,8 @@ export default function AttendanceRosterPage() {
                 <table ref={teacherTableRef} className="min-w-[900px] w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-semibold text-gray-500">
-                      <th className="px-1 pb-1.5">이름</th><th className="px-1 pb-1.5 w-[120px]">학년</th>
-                      <th className="px-1 pb-1.5 w-[120px]">담임</th><th className="px-1 pb-1.5">직분</th>
+                      <th className="px-1 pb-1.5">이름</th><th className="px-1 pb-1.5 w-[120px]">담임</th>
+                      <th className="px-1 pb-1.5 w-[120px]">학년</th><th className="px-1 pb-1.5">직분</th>
                       <th className="px-1 pb-1.5">메모</th><th className="w-10" />
                     </tr>
                   </thead>
@@ -412,8 +412,13 @@ export default function AttendanceRosterPage() {
                     {teacherRows.map((row, index) => (
                       <tr key={index}>
                         <td className="p-1"><input value={row.name} onChange={(event) => updateTeacherRow(index, 'name', event.target.value)} onKeyDown={(event) => handleQuickKeyDown(event, 'teacher', index, 'name')} placeholder="교사 이름" className={QUICK_FIELD_CLASS} /></td>
-                        <td className="p-1"><select value={row.grade} onChange={(event) => updateTeacherRow(index, 'grade', Number(event.target.value))} className={QUICK_FIELD_CLASS}><option value={0}>학년 없음</option><option value={1}>1학년</option><option value={2}>2학년</option><option value={3}>3학년</option></select></td>
-                        <td className="p-1"><select value={row.is_homeroom ? 'homeroom' : 'none'} onChange={(event) => updateTeacherRow(index, 'is_homeroom', event.target.value === 'homeroom')} className={QUICK_FIELD_CLASS}><option value="none">없음</option><option value="homeroom">담임</option></select></td>
+                        <td className="p-1"><select value={row.is_homeroom ? 'homeroom' : 'none'} onChange={(event) => {
+                          const isHomeroom = event.target.value === 'homeroom';
+                          setTeacherRows((current) => current.map((item, rowIndex) => rowIndex === index
+                            ? { ...item, is_homeroom: isHomeroom, grade: isHomeroom ? item.grade || 1 : 0 }
+                            : item));
+                        }} className={QUICK_FIELD_CLASS}><option value="none">없음</option><option value="homeroom">담임</option></select></td>
+                        <td className="p-1">{row.is_homeroom ? <select value={row.grade || 1} onChange={(event) => updateTeacherRow(index, 'grade', Number(event.target.value))} className={QUICK_FIELD_CLASS}><option value={1}>1학년</option><option value={2}>2학년</option><option value={3}>3학년</option></select> : <span className="block px-3 py-2 text-sm text-gray-400">-</span>}</td>
                         <td className="p-1"><input value={row.position} onChange={(event) => updateTeacherRow(index, 'position', event.target.value)} placeholder="교사, 부장교사" className={QUICK_FIELD_CLASS} /></td>
                         <td className="p-1"><input value={row.memo} onChange={(event) => updateTeacherRow(index, 'memo', event.target.value)} onKeyDown={(event) => handleQuickKeyDown(event, 'teacher', index, 'memo')} placeholder="메모" className={QUICK_FIELD_CLASS} /></td>
                         <td className="p-1 text-center"><button type="button" onClick={() => removeQuickRow('teacher', index)} className="rounded p-2 text-gray-400 hover:bg-danger-50 hover:text-danger-600" aria-label="교사 입력 행 삭제"><Trash2 className="h-4 w-4" /></button></td>
@@ -550,29 +555,37 @@ export default function AttendanceRosterPage() {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">학년</label>
-                  <select
-                    value={form.grade}
-                    onChange={(event) => setForm((current) => ({ ...current, grade: Number(event.target.value) }))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  >
-                    <option value={0}>학년 없음</option>
-                    <option value={1}>1학년</option>
-                    <option value={2}>2학년</option>
-                    <option value={3}>3학년</option>
-                  </select>
-                </div>
-                <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">담임</label>
                   <select
                     value={form.is_homeroom ? 'homeroom' : 'none'}
-                    onChange={(event) => setForm((current) => ({ ...current, is_homeroom: event.target.value === 'homeroom' }))}
+                    onChange={(event) => {
+                      const isHomeroom = event.target.value === 'homeroom';
+                      setForm((current) => ({
+                        ...current,
+                        is_homeroom: isHomeroom,
+                        grade: isHomeroom ? current.grade || 1 : 0,
+                      }));
+                    }}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
                     <option value="none">없음</option>
                     <option value="homeroom">담임</option>
                   </select>
                 </div>
+                {form.is_homeroom && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">학년</label>
+                    <select
+                      value={form.grade || 1}
+                      onChange={(event) => setForm((current) => ({ ...current, grade: Number(event.target.value) }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    >
+                      <option value={1}>1학년</option>
+                      <option value={2}>2학년</option>
+                      <option value={3}>3학년</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">직분</label>
