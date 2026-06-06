@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -20,13 +19,15 @@ import {
   UserRoundCog,
   UsersRound,
 } from 'lucide-react';
-import { useUser } from '@/hooks/useUser';
-import { createClient } from '@/lib/supabase';
 import type { Role } from '@/types';
 
 interface SidebarProps {
   role: Role;
   mobile?: boolean;
+  pendingCount?: number;
+  pendingUserCount?: number;
+  rejectedCount?: number;
+  onNavigate?: () => void;
 }
 
 interface NavItem {
@@ -143,61 +144,15 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   return groups;
 }
 
-export default function Sidebar({ role, mobile = false }: SidebarProps) {
+export default function Sidebar({
+  role,
+  mobile = false,
+  pendingCount = 0,
+  pendingUserCount = 0,
+  rejectedCount = 0,
+  onNavigate,
+}: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useUser();
-  const [pendingCount, setPendingCount] = useState(0);
-  const [pendingUserCount, setPendingUserCount] = useState(0);
-  const [rejectedCount, setRejectedCount] = useState(0);
-
-  useEffect(() => {
-    if (role !== 'accountant' && role !== 'master') return;
-    if (!user) return;
-
-    const supabase = createClient();
-    let query = supabase
-      .from('receipts')
-      .select('id')
-      .eq('status', 'pending');
-
-    // accountant는 본인 부서만
-    if (role === 'accountant' && user.department_id) {
-      query = query.eq('department_id', user.department_id);
-    }
-
-    query.then(({ data, error }) => {
-      const n = error ? 0 : (data?.length ?? 0);
-      setPendingCount(n);
-    });
-  }, [role, user]);
-
-  // 승인 대기 신규 사용자 수 (master / sub_master)
-  useEffect(() => {
-    if (role !== 'master' && role !== 'sub_master') return;
-
-    const supabase = createClient();
-    supabase
-      .from('users')
-      .select('id')
-      .eq('status', 'pending')
-      .then(({ data, error }) => {
-        setPendingUserCount(error ? 0 : (data?.length ?? 0));
-      });
-  }, [role]);
-
-  // 반려된 내 영수증 수
-  useEffect(() => {
-    if (!user) return;
-    const supabase = createClient();
-    supabase
-      .from('receipts')
-      .select('id')
-      .eq('submitted_by', user.id)
-      .eq('status', 'rejected')
-      .then(({ data, error }) => {
-        setRejectedCount(error ? 0 : (data?.length ?? 0));
-      });
-  }, [user]);
 
   const navGroups = getNavGroups(role, pendingCount, pendingUserCount, rejectedCount);
 
@@ -227,6 +182,9 @@ export default function Sidebar({ role, mobile = false }: SidebarProps) {
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      onClick={() => {
+                        if (!isActive) onNavigate?.();
+                      }}
                       className={`
                         flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
                         transition-colors duration-150

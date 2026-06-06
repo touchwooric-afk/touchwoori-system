@@ -1,10 +1,11 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LogOut, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useUser } from '@/hooks/useUser';
+import { useNavigationBadges } from '@/hooks/useNavigationBadges';
 import { createClient } from '@/lib/supabase';
 import { useActiveDept } from '@/contexts/DepartmentContext';
 import Sidebar from './Sidebar';
@@ -24,8 +25,16 @@ function getHonorific(position: string | null | undefined): string {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [navigating, setNavigating] = useState(false);
   const { activeDept, setActiveDept, departments, isCrossDept } = useActiveDept();
+  const badges = useNavigationBadges(user);
+
+  useEffect(() => {
+    setNavigating(false);
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -47,6 +56,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen app-surface">
+      {navigating && (
+        <div className="fixed left-0 right-0 top-16 z-50 h-1 overflow-hidden bg-primary-100">
+          <div className="h-full w-2/3 animate-pulse bg-gradient-to-r from-primary-500 to-primary-700" />
+        </div>
+      )}
       {/* 상단 바 */}
       <header className="fixed top-0 left-0 right-0 z-30 h-16 glass-header border-b">
         <div className="flex items-center justify-between h-full px-4 md:px-6">
@@ -110,13 +124,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             className="w-64 h-full glass-popover pt-16 animate-slide-in-right overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <Sidebar role={user.role} mobile />
+            <Sidebar
+              role={user.role}
+              mobile
+              pendingCount={badges.pendingReceipts}
+              pendingUserCount={badges.pendingUsers}
+              rejectedCount={badges.rejectedReceipts}
+              onNavigate={() => setNavigating(true)}
+            />
           </div>
         </div>
       )}
 
       {/* PC 사이드바 */}
-      <Sidebar role={user.role} />
+      <Sidebar
+        role={user.role}
+        pendingCount={badges.pendingReceipts}
+        pendingUserCount={badges.pendingUsers}
+        rejectedCount={badges.rejectedReceipts}
+        onNavigate={() => setNavigating(true)}
+      />
 
       {/* 메인 콘텐츠 */}
       <main className="pt-16 pb-20 md:pb-6 md:pl-64">
@@ -126,7 +153,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* 모바일 하단 탭 */}
-      <BottomTabs role={user.role} />
+      <BottomTabs
+        role={user.role}
+        pendingUserCount={badges.pendingUsers}
+        rejectedCount={badges.rejectedReceipts}
+        onNavigate={() => setNavigating(true)}
+      />
     </div>
   );
 }

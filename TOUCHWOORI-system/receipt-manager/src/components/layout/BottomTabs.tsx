@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Receipt,
@@ -13,12 +12,13 @@ import {
   FileCheck,
   CalendarCheck,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase';
-import { useUser } from '@/hooks/useUser';
 import type { Role } from '@/types';
 
 interface BottomTabsProps {
   role: Role;
+  pendingUserCount?: number;
+  rejectedCount?: number;
+  onNavigate?: () => void;
 }
 
 interface TabItem {
@@ -72,37 +72,13 @@ function getTabs(role: Role, pendingUserCount?: number, rejectedCount?: number):
   }
 }
 
-export default function BottomTabs({ role }: BottomTabsProps) {
+export default function BottomTabs({
+  role,
+  pendingUserCount = 0,
+  rejectedCount = 0,
+  onNavigate,
+}: BottomTabsProps) {
   const pathname = usePathname();
-  const { user } = useUser();
-  const [pendingUserCount, setPendingUserCount] = useState(0);
-  const [rejectedCount, setRejectedCount] = useState(0);
-
-  useEffect(() => {
-    if (role !== 'master' && role !== 'sub_master') return;
-    const supabase = createClient();
-    supabase
-      .from('users')
-      .select('id')
-      .eq('status', 'pending')
-      .then(({ data, error }) => {
-        setPendingUserCount(error ? 0 : (data?.length ?? 0));
-      });
-  }, [role]);
-
-  // 반려된 내 영수증 수
-  useEffect(() => {
-    if (!user) return;
-    const supabase = createClient();
-    supabase
-      .from('receipts')
-      .select('id')
-      .eq('submitted_by', user.id)
-      .eq('status', 'rejected')
-      .then(({ data, error }) => {
-        setRejectedCount(error ? 0 : (data?.length ?? 0));
-      });
-  }, [user]);
 
   const tabs = getTabs(role, pendingUserCount, rejectedCount);
 
@@ -118,6 +94,9 @@ export default function BottomTabs({ role }: BottomTabsProps) {
             <Link
               key={tab.href}
               href={tab.href}
+              onClick={() => {
+                if (!isActive) onNavigate?.();
+              }}
               className={`
                 relative flex flex-col items-center gap-0.5 px-3 py-1.5
                 transition-colors duration-150
