@@ -29,6 +29,9 @@ import {
   FileSpreadsheet,
   Paperclip,
   Loader2,
+  ChevronDown,
+  SlidersHorizontal,
+  Pencil,
 } from 'lucide-react';
 import type { Ledger, LedgerEntryWithBalance, Category } from '@/types';
 
@@ -84,6 +87,8 @@ function LedgerPageInner() {
   const [searchText, setSearchText] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [filterReceipt, setFilterReceipt] = useState<'all' | 'income-all' | 'expense-all' | 'linked' | 'unlinked'>('all');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   // Sort
   const [sortField, setSortField] = useState<SortField>('date');
@@ -696,11 +701,20 @@ function LedgerPageInner() {
     });
   };
 
+  const toggleCardExpanded = (id: string) => {
+    setExpandedCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
         {/* Page header */}
-        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 rounded-2xl p-4 sm:p-6 text-white shadow-[0_18px_42px_rgba(86,80,207,0.2)]">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-white/20 p-2.5">
@@ -712,24 +726,24 @@ function LedgerPageInner() {
               </div>
             </div>
             {/* 실시간 합계 */}
-            <div className="flex gap-4 text-sm flex-wrap">
-              <div className="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[100px]">
+            <div className="grid w-full grid-cols-3 gap-2 text-sm sm:flex sm:w-auto sm:gap-4 sm:flex-wrap">
+              <div className="bg-white/10 rounded-xl px-2 py-2 text-center min-w-0 sm:min-w-[100px] sm:px-4">
                 <p className="text-white/60 text-xs">총 수입</p>
-                <p className="text-white font-bold tabular-nums">{formatCurrency(totalIncome)}</p>
+                <p className="truncate text-xs font-bold tabular-nums text-white sm:text-sm">{formatCurrency(totalIncome)}</p>
               </div>
-              <div className="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[100px]">
+              <div className="bg-white/10 rounded-xl px-2 py-2 text-center min-w-0 sm:min-w-[100px] sm:px-4">
                 <p className="text-white/60 text-xs">총 지출</p>
-                <p className="text-white font-bold tabular-nums">{formatCurrency(totalExpense)}</p>
+                <p className="truncate text-xs font-bold tabular-nums text-white sm:text-sm">{formatCurrency(totalExpense)}</p>
               </div>
-              <div className={`rounded-xl px-4 py-2 text-center min-w-[100px] ${
+              <div className={`rounded-xl px-2 py-2 text-center min-w-0 sm:min-w-[100px] sm:px-4 ${
                 totalIncome - totalExpense >= 0 ? 'bg-emerald-500/30' : 'bg-rose-500/30'
               }`}>
                 <p className="text-white/60 text-xs">현재 잔액</p>
-                <p className="text-white font-bold tabular-nums">{formatCurrency(totalIncome - totalExpense)}</p>
+                <p className="truncate text-xs font-bold tabular-nums text-white sm:text-sm">{formatCurrency(totalIncome - totalExpense)}</p>
               </div>
             </div>
             {isEditor && (
-              <div className="flex gap-2">
+              <div className="hidden gap-2 md:flex">
                 {selectedIds.size > 0 && (
                   <Button
                     variant="danger"
@@ -766,7 +780,7 @@ function LedgerPageInner() {
         {/* Ledger selector + Filters */}
         <div className="glass-panel rounded-xl p-4 space-y-4">
           {/* Ledger dropdown */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
             <label className="text-sm font-medium text-gray-700 shrink-0">장부</label>
             <select
               value={selectedLedgerId}
@@ -777,7 +791,7 @@ function LedgerPageInner() {
               }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm
                 focus:ring-2 focus:ring-primary-500 focus:border-primary-500
-                outline-none transition-shadow min-w-[180px]"
+                outline-none transition-shadow min-w-0 flex-1 sm:min-w-[180px] sm:flex-none"
             >
               {ledgers.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -785,11 +799,23 @@ function LedgerPageInner() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((open) => !open)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium md:hidden ${
+                mobileFiltersOpen || startDate || endDate || filterCategory || searchText
+                  ? 'border-primary-300 bg-primary-50 text-primary-700'
+                  : 'border-gray-300 bg-white text-gray-600'
+              }`}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              필터
+            </button>
           </div>
 
           {/* Filters row */}
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="flex-shrink-0">
+          <div className={`${mobileFiltersOpen ? 'grid' : 'hidden'} grid-cols-2 items-end gap-3 border-t border-gray-100 pt-4 md:flex md:flex-wrap md:border-0 md:pt-0`}>
+            <div className="min-w-0">
               <label className="block text-xs font-medium text-gray-500 mb-1">시작일</label>
               <input
                 type="date"
@@ -798,12 +824,12 @@ function LedgerPageInner() {
                   setStartDate(e.target.value);
                   setPage(1);
                 }}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm
+                className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm
                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                   outline-none transition-shadow"
               />
             </div>
-            <div className="flex-shrink-0">
+            <div className="min-w-0">
               <label className="block text-xs font-medium text-gray-500 mb-1">종료일</label>
               <input
                 type="date"
@@ -812,12 +838,12 @@ function LedgerPageInner() {
                   setEndDate(e.target.value);
                   setPage(1);
                 }}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm
+                className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm
                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                   outline-none transition-shadow"
               />
             </div>
-            <div className="flex-shrink-0">
+            <div className="min-w-0">
               <label className="block text-xs font-medium text-gray-500 mb-1">카테고리</label>
               <select
                 value={filterCategory}
@@ -825,7 +851,7 @@ function LedgerPageInner() {
                   setFilterCategory(e.target.value);
                   setPage(1);
                 }}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm
+                className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm
                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500
                   outline-none transition-shadow min-w-[140px]"
               >
@@ -837,7 +863,7 @@ function LedgerPageInner() {
                 ))}
               </select>
             </div>
-            <div className="flex-1 min-w-[180px]">
+            <div className="col-span-2 min-w-0 flex-1 md:min-w-[180px]">
               <label className="block text-xs font-medium text-gray-500 mb-1">검색</label>
               <div className="flex gap-2">
                 <input
@@ -919,7 +945,166 @@ function LedgerPageInner() {
             }
           />
         ) : (
-          <div className="glass-panel rounded-xl overflow-hidden">
+          <>
+          {/* 휴대폰: 핵심 정보를 우선 표시하고 나머지는 펼쳐서 확인 */}
+          <div className="space-y-3 md:hidden">
+            {isEditor && (
+              <div className="glass-panel flex items-center justify-between rounded-xl px-4 py-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  현재 페이지 전체 선택
+                </label>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteConfirm(true)}
+                    className="text-sm font-semibold text-danger-600"
+                  >
+                    {selectedIds.size}건 삭제
+                  </button>
+                )}
+              </div>
+            )}
+
+            {sortedEntries.map((entry) => {
+              const isExpanded = expandedCards.has(entry.id);
+              const isNew = Date.now() - new Date(entry.created_at).getTime() < 24 * 60 * 60 * 1000;
+              const amount = entry.income > 0 ? entry.income : entry.expense;
+              const amountLabel = entry.income > 0 ? '수입' : '지출';
+              return (
+                <article
+                  key={entry.id}
+                  className={`glass-panel overflow-hidden rounded-xl border transition-colors ${
+                    selectedIds.has(entry.id) ? 'border-primary-300 bg-primary-50/50' : 'border-transparent'
+                  }`}
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      {isEditor && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(entry.id)}
+                          onChange={() => toggleSelectOne(entry.id)}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          aria-label={`${entry.description} 선택`}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <time className="text-xs font-medium tabular-nums text-gray-500">
+                            {formatDateShort(entry.date)}
+                          </time>
+                          {isNew && (
+                            <span className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-white">NEW</span>
+                          )}
+                        </div>
+                        <h3 className="mt-2 break-words text-base font-bold leading-6 text-gray-900">
+                          {entry.description}
+                        </h3>
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] text-gray-400">{amountLabel}</p>
+                            <p className={`text-lg font-bold tabular-nums ${
+                              entry.income > 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}>
+                              {formatCurrency(amount)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] text-gray-400">잔액</p>
+                            <p className="text-sm font-bold tabular-nums text-gray-900">{formatCurrency(entry.balance)}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {entry.category && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFilterCategory((prev) => prev === entry.category_id ? '' : entry.category_id);
+                                setPage(1);
+                              }}
+                              className={`inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${
+                                filterCategory === entry.category_id
+                                  ? 'bg-gray-200 text-gray-900 ring-2 ring-primary-300'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}
+                            >
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: entry.category.color || '#6366f1' }} />
+                              <span className="truncate">{entry.category.name}</span>
+                            </button>
+                          )}
+                          {entry.receipt_id ? (
+                            <ReceiptPreviewBadge
+                              receiptId={entry.receipt_id}
+                              imageUrl={(entry as any).receipts?.image_url || null}
+                              onOpenModal={(imageUrl) =>
+                                setReceiptImageModal({ open: true, imageUrl, receiptId: entry.receipt_id! })
+                              }
+                              onHoverPreview={setHoverPreviewUrl}
+                            />
+                          ) : entry.expense > 0 ? (
+                            <span className="rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">영수증 미제출</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 bg-gray-50/70 px-4 py-3">
+                      <dl className="space-y-2 text-sm">
+                        {isMainLedger && entry.ledger_name && (
+                          <div className="flex justify-between gap-4">
+                            <dt className="shrink-0 text-gray-400">장부</dt>
+                            <dd className="text-right font-medium text-gray-700">{entry.ledger_name}</dd>
+                          </div>
+                        )}
+                        <div className="flex justify-between gap-4">
+                          <dt className="shrink-0 text-gray-400">비고</dt>
+                          <dd className="break-words text-right text-gray-700">{entry.memo || '없음'}</dd>
+                        </div>
+                      </dl>
+                      {isEditor && (
+                        <div className="mt-3 flex justify-end gap-2 border-t border-gray-200 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(entry)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirm({ open: true, entry })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-danger-50 px-3 py-2 text-xs font-semibold text-danger-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />삭제
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleCardExpanded(entry.id)}
+                    className="flex w-full items-center justify-center gap-1 border-t border-gray-100 py-2.5 text-xs font-semibold text-gray-500"
+                  >
+                    {isExpanded ? '접기' : '상세 보기'}
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+
+          {/* 태블릿·PC: 기존 표 유지 */}
+          <div className="glass-panel hidden rounded-xl overflow-hidden md:block">
             <div className="overflow-x-auto">
               <table className="text-sm" style={{ tableLayout: 'fixed', width: `max(100%, ${tableWidth}px)` }}>
                 <colgroup>
@@ -1159,6 +1344,7 @@ function LedgerPageInner() {
               </table>
             </div>
           </div>
+          </>
         )}
 
         <Pagination
@@ -1168,6 +1354,20 @@ function LedgerPageInner() {
           onPageChange={setPage}
         />
       </div>
+
+      {isEditor && (
+        <button
+          type="button"
+          onClick={() => {
+            setRows([EMPTY_ROW()]);
+            setAddModalOpen(true);
+          }}
+          className="fixed bottom-20 right-4 z-20 flex h-14 items-center gap-2 rounded-full bg-gradient-to-r from-primary-700 to-primary-500 px-5 text-sm font-bold text-white shadow-[0_12px_30px_rgba(79,70,229,0.35)] md:hidden"
+        >
+          <Plus className="h-5 w-5" />
+          항목 추가
+        </button>
+      )}
 
       {/* ─── Multi-row entry modal ─── */}
       <Modal
