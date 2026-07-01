@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { useUser } from '@/hooks/useUser';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
@@ -18,6 +19,7 @@ import type { Category } from '@/types';
 
 export default function NewReceiptPage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const router = useRouter();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +99,7 @@ export default function NewReceiptPage() {
       if (imageFile) {
         const receiptId = crypto.randomUUID();
         const timestamp = Date.now();
-        const path = `receipts/${user.department_id}/${user.id}/${receiptId}_${timestamp}.jpg`;
+        const path = `receipts/${activeDept || user.department_id}/${user.id}/${receiptId}_${timestamp}.jpg`;
 
         const { error: uploadError } = await supabase.storage
           .from('receipts')
@@ -124,6 +126,7 @@ export default function NewReceiptPage() {
           vendor: form.vendor || null,
           memo: form.memo || null,
           image_url: imageUrl,
+          department_id: activeDept || user.department_id,
           skip_duplicate_check: skipDupeCheck,
           has_duplicate_warning: skipDupeCheck,
         }),
@@ -145,8 +148,8 @@ export default function NewReceiptPage() {
 
       const { data: receipt } = await createRes.json();
 
-      // Auto-approve (accountant direct input)
-      if (receipt?.id) {
+      // 서버가 바로 승인하지 않은 경우에만 승인 API를 호출합니다.
+      if (receipt?.id && receipt.status === 'pending') {
         const approveRes = await fetch(`/api/receipts/${receipt.id}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

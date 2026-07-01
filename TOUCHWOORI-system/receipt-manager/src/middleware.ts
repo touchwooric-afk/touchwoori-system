@@ -16,10 +16,14 @@ const MASTER_ONLY_PATHS = [
 // master + sub_master 접근 가능 경로
 const MASTER_PATHS = ['/master'];
 
-// accountant 이상 전용 경로
-const ACCOUNTANT_PATHS = [
+// 영수증 승인/직접 입력: 회계 담당자 이상만 가능
+const RECEIPT_ACCOUNTANT_PATHS = [
   '/receipts/pending',
   '/receipts/new',
+];
+
+// 장부 편집/엑셀: master, sub_master, accountant 가능
+const LEDGER_EDITOR_PATHS = [
   '/ledger/manage',
   '/excel',
 ];
@@ -135,9 +139,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // accountant 이상 전용 경로 (sub_master/auditor/overseer/admin_viewer 차단)
-  if (ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+  // 영수증 승인/직접 입력 경로 (sub_master/auditor/overseer/admin_viewer 차단)
+  if (RECEIPT_ACCOUNTANT_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     if (role !== 'master' && role !== 'accountant') {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+  }
+
+  // 장부 편집/엑셀 경로
+  if (LEDGER_EDITOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    if (role !== 'master' && role !== 'sub_master' && role !== 'accountant') {
       return NextResponse.redirect(new URL('/', request.url));
     }
   }

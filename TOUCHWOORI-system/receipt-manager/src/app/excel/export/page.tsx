@@ -10,9 +10,11 @@ import Button from '@/components/ui/Button';
 import { formatDateShort } from '@/lib/format';
 import { Download, FileSpreadsheet } from 'lucide-react';
 import type { Ledger } from '@/types';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 
 export default function ExcelExportPage() {
   const toast = useToast();
+  const { activeDept } = useActiveDept();
 
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,8 +24,10 @@ export default function ExcelExportPage() {
   const [exporting, setExporting] = useState(false);
 
   const fetchLedgers = useCallback(async () => {
+    if (!activeDept) return;
     try {
-      const res = await fetch('/api/ledgers');
+      const params = new URLSearchParams({ department_id: activeDept });
+      const res = await fetch(`/api/ledgers?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       const active = (json.data as Ledger[]).filter((l) => l.is_active);
@@ -34,7 +38,7 @@ export default function ExcelExportPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, activeDept]);
 
   useEffect(() => { fetchLedgers(); }, [fetchLedgers]);
 

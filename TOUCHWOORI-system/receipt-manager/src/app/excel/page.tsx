@@ -12,6 +12,7 @@ import Button from '@/components/ui/Button';
 import { formatCurrency } from '@/lib/format';
 import { FileSpreadsheet, Upload, Download, CheckCircle, AlertCircle, XCircle, RotateCcw } from 'lucide-react';
 import type { Ledger, Category } from '@/types';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 
 interface LastSync {
   id: string;
@@ -44,6 +45,7 @@ interface ImportPreview {
 
 export default function ExcelPage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const router = useRouter();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +75,7 @@ export default function ExcelPage() {
   const [exportEndDate, setExportEndDate] = useState('');
   const [exporting, setExporting] = useState(false);
 
-  const isEditor = user?.role === 'accountant' || user?.role === 'master';
+  const isEditor = user?.role === 'accountant' || user?.role === 'master' || user?.role === 'sub_master';
 
   useEffect(() => {
     if (!isEditor) {
@@ -82,9 +84,11 @@ export default function ExcelPage() {
   }, [isEditor, router]);
 
   const fetchLedgers = useCallback(async () => {
+    if (!activeDept) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/ledgers');
+      const params = new URLSearchParams({ department_id: activeDept });
+      const res = await fetch(`/api/ledgers?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       const active = (json.data as Ledger[]).filter((l) => l.is_active);
@@ -98,7 +102,7 @@ export default function ExcelPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, activeDept]);
 
   const fetchCategories = useCallback(async () => {
     try {

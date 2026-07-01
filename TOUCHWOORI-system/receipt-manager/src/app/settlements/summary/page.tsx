@@ -4,6 +4,7 @@ export const runtime = 'edge';
 
 
 import { useState } from 'react';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
@@ -26,6 +27,7 @@ interface SummaryData {
 
 export default function SettlementSummaryPage() {
   const toast = useToast();
+  const { activeDept } = useActiveDept();
 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -43,7 +45,7 @@ export default function SettlementSummaryPage() {
       const res = await fetch('/api/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startDate, endDate }),
+        body: JSON.stringify({ startDate, endDate, department_id: activeDept }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);

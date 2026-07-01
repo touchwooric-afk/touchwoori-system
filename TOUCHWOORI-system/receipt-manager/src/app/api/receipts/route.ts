@@ -3,6 +3,8 @@ export const runtime = 'edge';
 import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const RECEIPT_WRITE_ROLES = ['master', 'accountant', 'teacher'];
+
 // GET: 영수증 목록 조회 (역할별 접근 제어)
 export async function GET(request: NextRequest) {
   try {
@@ -139,6 +141,8 @@ export async function GET(request: NextRequest) {
         .eq('status', 'pending');
       if (profile.role === 'accountant') {
         sumQuery = sumQuery.eq('department_id', profile.department_id);
+      } else if (deptParam) {
+        sumQuery = sumQuery.eq('department_id', deptParam);
       }
       const { data: sumRows } = await sumQuery;
       pendingTotal = (sumRows || []).reduce((s, r) => s + (r.final_amount || 0), 0);
@@ -169,30 +173,36 @@ export async function GET(request: NextRequest) {
 
     // pending 조회 시: 장부 항목 expense 금액과 대조해 중복 플래그 추가
     if (status === 'pending' && enrichedData.length > 0) {
+      const matchDepartment = profile.role === 'accountant'
+        ? profile.department_id
+        : deptParam;
+
       // 부서의 활성 장부 조회
-      const { data: ledgers } = await supabase
-        .from('ledgers')
-        .select('id')
-        .eq('department_id', profile.role === 'accountant' ? profile.department_id : (profile.department_id ?? ''))
-        .eq('is_active', true);
+      if (matchDepartment) {
+        const { data: ledgers } = await supabase
+          .from('ledgers')
+          .select('id')
+          .eq('department_id', matchDepartment)
+          .eq('is_active', true);
 
-      if (ledgers && ledgers.length > 0) {
-        const ledgerIds = ledgers.map((l: { id: string }) => l.id);
-        // 장부 항목 expense 금액 목록 (이미 영수증 연동된 항목 제외)
-        const { data: ledgerExpenses } = await supabase
-          .from('ledger_entries')
-          .select('expense')
-          .in('ledger_id', ledgerIds)
-          .gt('expense', 0);
+        if (ledgers && ledgers.length > 0) {
+          const ledgerIds = ledgers.map((l: { id: string }) => l.id);
+          // 장부 항목 expense 금액 목록
+          const { data: ledgerExpenses } = await supabase
+            .from('ledger_entries')
+            .select('expense')
+            .in('ledger_id', ledgerIds)
+            .gt('expense', 0);
 
-        const ledgerExpenseAmounts = new Set(
-          (ledgerExpenses || []).map((e: { expense: number }) => e.expense)
-        );
+          const ledgerExpenseAmounts = new Set(
+            (ledgerExpenses || []).map((e: { expense: number }) => e.expense)
+          );
 
-        enrichedData = enrichedData.map((r: Record<string, unknown>) => ({
-          ...r,
-          has_ledger_match: ledgerExpenseAmounts.has(r.final_amount as number),
-        }));
+          enrichedData = enrichedData.map((r: Record<string, unknown>) => ({
+            ...r,
+            has_ledger_match: ledgerExpenseAmounts.has(r.final_amount as number),
+          }));
+        }
       }
     }
 
@@ -245,10 +255,40 @@ export async function POST(request: NextRequest) {
       skip_auto_ledger, // 기존 장부 항목에 연결할 때 중복 생성 방지
       skip_duplicate_check, // 기존 항목 연결 시 중복 검사 스킵
       ledger_id, // 선택한 장부 ID (중복 체크 범위 한정용)
+      department_id,
       bank_name,
       account_holder,
       account_number,
     } = body;
+
+    if (!['teacher', 'accountant', 'master'].includes(profile.role)) {
+      return NextResponse.json({ error: '영수증 제출 권한이 없습니다' }, { status: 403 });
+    }
+
+    const targetDepartment = profile.role === 'master'
+      ? (department_id || profile.department_id)
+      : profile.department_id;
+
+    let validatedLedgerId: string | null = ledger_id || null;
+    if (validatedLedgerId) {
+      const { data: selectedLedger } = await supabase
+        .from('ledgers')
+        .select('id, department_id, is_active')
+        .eq('id', validatedLedgerId)
+        .single();
+
+      if (!selectedLedger) {
+        return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+      }
+
+      if (selectedLedger.department_id !== targetDepartment) {
+        return NextResponse.json({ error: '선택한 부서의 장부만 사용할 수 있습니다' }, { status: 403 });
+      }
+
+      if (!selectedLedger.is_active) {
+        return NextResponse.json({ error: '비활성 장부에는 영수증을 연결할 수 없습니다' }, { status: 400 });
+      }
+    }
 
     // 유효성 검사
     if (!date || !description || final_amount === undefined || !category_id) {
@@ -284,12 +324,12 @@ export async function POST(request: NextRequest) {
     if (!skip_duplicate_check) {
       let duplicate = null;
 
-      if (ledger_id) {
+      if (validatedLedgerId) {
         // 선택한 장부에 연동된 영수증 중에서만 중복 체크
         const { data: entries } = await supabase
           .from('ledger_entries')
           .select('receipt_id')
-          .eq('ledger_id', ledger_id)
+          .eq('ledger_id', validatedLedgerId)
           .not('receipt_id', 'is', null);
 
         const receiptIds = (entries || []).map((e: { receipt_id: string }) => e.receipt_id);
@@ -309,7 +349,7 @@ export async function POST(request: NextRequest) {
         const { data } = await supabase
           .from('receipts')
           .select('id, description, date, final_amount, status, submitted_by')
-          .eq('department_id', profile.department_id)
+          .eq('department_id', targetDepartment)
           .eq('final_amount', final_amount)
           .neq('status', 'rejected')
           .limit(1)
@@ -352,7 +392,7 @@ export async function POST(request: NextRequest) {
         memo: memo || null,
         ocr_raw: ocr_raw || null,
         submitted_by: authUser.id,
-        department_id: profile.department_id,
+        department_id: targetDepartment,
         status: isEditor ? 'approved' : 'pending',
         reviewed_by: isEditor ? authUser.id : null,
         reviewed_at: isEditor ? now : null,
@@ -372,13 +412,13 @@ export async function POST(request: NextRequest) {
     if (isEditor && data && !skip_auto_ledger) {
       let targetLedgerId: string | null = null;
 
-      if (ledger_id) {
+      if (validatedLedgerId) {
         // 선택한 장부가 있으면 해당 장부에 추가
         const { data: selectedLedger } = await supabase
           .from('ledgers')
           .select('id')
-          .eq('id', ledger_id)
-          .eq('department_id', profile.department_id)
+          .eq('id', validatedLedgerId)
+          .eq('department_id', targetDepartment)
           .eq('is_active', true)
           .single();
         targetLedgerId = selectedLedger?.id ?? null;
@@ -389,7 +429,7 @@ export async function POST(request: NextRequest) {
         const { data: mainLedger } = await supabase
           .from('ledgers')
           .select('id')
-          .eq('department_id', profile.department_id)
+          .eq('department_id', targetDepartment)
           .eq('type', 'main')
           .eq('is_active', true)
           .single();
@@ -437,6 +477,10 @@ export async function DELETE(request: NextRequest) {
 
     if (!profile || profile.status !== 'active') {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
+    }
+
+    if (!RECEIPT_WRITE_ROLES.includes(profile.role)) {
+      return NextResponse.json({ error: '영수증 삭제 권한이 없습니다' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

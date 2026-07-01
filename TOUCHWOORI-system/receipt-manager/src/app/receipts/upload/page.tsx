@@ -6,6 +6,7 @@ export const runtime = 'edge';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/hooks/useUser';
+import { useActiveDept } from '@/contexts/DepartmentContext';
 import { useToast } from '@/components/ui/Toast';
 import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/ui/Button';
@@ -76,6 +77,7 @@ const confidenceColor: Record<Candidate['confidence'], string> = {
 // ─── Page ────────────────────────────────────────────────────────
 export default function ReceiptUploadPage() {
   const { user } = useUser();
+  const { activeDept } = useActiveDept();
   const router = useRouter();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,10 +132,11 @@ export default function ReceiptUploadPage() {
   }, [categories]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeDept) return;
     (async () => {
+      const ledgerParams = new URLSearchParams({ department_id: activeDept });
       if (!isTeacher) {
-        const [lRes, cRes] = await Promise.all([fetch('/api/ledgers'), fetch('/api/categories')]);
+        const [lRes, cRes] = await Promise.all([fetch(`/api/ledgers?${ledgerParams}`), fetch('/api/categories')]);
         const lJson = await lRes.json();
         const cJson = await cRes.json();
         const active = ((lJson.data as Ledger[]) || []).filter((l: Ledger) => l.is_active);
@@ -141,7 +144,7 @@ export default function ReceiptUploadPage() {
         if (active.length > 0) setSelectedLedgerId(active[0].id);
         setCategories(((cJson.data as Category[]) || []).filter((c: Category) => c.is_active));
       } else {
-        const [cRes, lRes] = await Promise.all([fetch('/api/categories'), fetch('/api/ledgers')]);
+        const [cRes, lRes] = await Promise.all([fetch('/api/categories'), fetch(`/api/ledgers?${ledgerParams}`)]);
         const cJson = await cRes.json();
         const lJson = await lRes.json();
         setCategories(((cJson.data as Category[]) || []).filter((c: Category) => c.is_active));
@@ -149,7 +152,7 @@ export default function ReceiptUploadPage() {
         if (mainLedger) setTeacherLedgerId(mainLedger.id);
       }
     })();
-  }, [user, isTeacher]);
+  }, [user, isTeacher, activeDept]);
 
   // 즐겨찾기 드롭다운 외부 클릭 닫기
   useEffect(() => {
@@ -294,6 +297,7 @@ export default function ReceiptUploadPage() {
     try {
       const params = new URLSearchParams({ amount: String(num) });
       if (ledgerId) params.set('ledgerId', ledgerId);
+      if (activeDept) params.set('department_id', activeDept);
       const res = await fetch(`/api/receipts/check-similar?${params}`);
       const json = await res.json();
       if (json.hasSimilar && json.similar) {
@@ -309,7 +313,7 @@ export default function ReceiptUploadPage() {
         }));
       }
     } catch { /* silent */ }
-  }, []);
+  }, [activeDept]);
 
   // ── 파일 선택 ──────────────────────────────────────────────────
   const handleFiles = useCallback(async (files: FileList) => {
@@ -421,6 +425,7 @@ export default function ReceiptUploadPage() {
           skip_auto_ledger: row.matchMode === 'link',
           skip_duplicate_check: row.matchMode === 'link' || forceSubmit,
           ledger_id: receiptLedgerId,
+          department_id: activeDept,
           bank_name: bankInfo.bank_name || null,
           account_holder: bankInfo.account_holder || null,
           account_number: bankInfo.account_number || null,

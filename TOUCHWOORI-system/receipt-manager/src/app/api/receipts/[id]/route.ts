@@ -3,6 +3,8 @@ export const runtime = 'edge';
 import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const RECEIPT_WRITE_ROLES = ['master', 'accountant', 'teacher'];
+
 // GET: 영수증 단건 조회
 export async function GET(
   request: NextRequest,
@@ -75,6 +77,10 @@ export async function PATCH(
 
     if (!profile || profile.status !== 'active') {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
+    }
+
+    if (!RECEIPT_WRITE_ROLES.includes(profile.role)) {
+      return NextResponse.json({ error: '영수증 수정 권한이 없습니다' }, { status: 403 });
     }
 
     // 기존 영수증 확인
@@ -214,6 +220,10 @@ export async function DELETE(
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
+    if (!RECEIPT_WRITE_ROLES.includes(profile.role)) {
+      return NextResponse.json({ error: '영수증 삭제 권한이 없습니다' }, { status: 403 });
+    }
+
     // 영수증 조회 (권한 확인 + 이미지 URL)
     const { data: receipt } = await supabase
       .from('receipts')
@@ -239,8 +249,10 @@ export async function DELETE(
       }
     }
 
+    const serviceClient = createServiceClient();
+
     // ledger_entries FK 해제
-    await supabase
+    await serviceClient
       .from('ledger_entries')
       .update({ receipt_id: null })
       .eq('receipt_id', id);
@@ -248,7 +260,6 @@ export async function DELETE(
     // 이미지가 있으면 Storage에서 삭제 (service role 사용)
     if (receipt.image_url) {
       try {
-        const serviceClient = createServiceClient();
         // image_url에서 storage 경로 추출
         // 예: https://xxx.supabase.co/storage/v1/object/public/receipts/path/to/file.jpg
         const url = new URL(receipt.image_url);
@@ -263,7 +274,7 @@ export async function DELETE(
     }
 
     // 영수증 삭제
-    const { error } = await supabase
+    const { error } = await serviceClient
       .from('receipts')
       .delete()
       .eq('id', id);

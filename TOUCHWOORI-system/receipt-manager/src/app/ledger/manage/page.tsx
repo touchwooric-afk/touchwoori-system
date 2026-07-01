@@ -91,6 +91,7 @@ export default function LedgerManagePage() {
           name: createForm.name.trim(),
           type: 'special',
           description: createForm.description.trim() || null,
+          department_id: activeDept,
         }),
       });
       const json = await res.json();

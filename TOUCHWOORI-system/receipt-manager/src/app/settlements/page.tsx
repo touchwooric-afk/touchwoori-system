@@ -188,7 +188,11 @@ export default function SettlementsPage() {
     setPdfData(null);
     clearPdfPreview();
     try {
-      const body: Record<string, string> = { startDate: dates.start, endDate: dates.end };
+      const body: Record<string, string> = {
+        startDate: dates.start,
+        endDate: dates.end,
+        department_id: activeDept,
+      };
       if (selectedLedger) body.ledgerId = selectedLedger;
 
       const res = await fetch('/api/pdf', {

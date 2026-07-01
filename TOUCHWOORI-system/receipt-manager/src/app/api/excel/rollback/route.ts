@@ -3,6 +3,13 @@ export const runtime = 'edge';
 import { createServerClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const LEDGER_EDITOR_ROLES = ['master', 'sub_master', 'accountant'];
+
+function canWriteLedgerDepartment(role: string, userDepartment: string, ledgerDepartment: string) {
+  if (role === 'master' || role === 'sub_master') return true;
+  return role === 'accountant' && userDepartment === ledgerDepartment;
+}
+
 // GET: 특정 장부의 마지막 import 이력 조회
 export async function GET(request: NextRequest) {
   try {
@@ -19,7 +26,7 @@ export async function GET(request: NextRequest) {
     if (!profile || profile.status !== 'active') {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
-    if (profile.role !== 'master' && profile.role !== 'accountant') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
@@ -60,7 +67,7 @@ export async function DELETE(request: NextRequest) {
     if (!profile || profile.status !== 'active') {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
-    if (profile.role !== 'master' && profile.role !== 'accountant') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
@@ -78,7 +85,7 @@ export async function DELETE(request: NextRequest) {
       .eq('id', ledgerId)
       .single();
 
-    if (!ledger || (profile.role === 'accountant' && ledger.department_id !== profile.department_id)) {
+    if (!ledger || !canWriteLedgerDepartment(profile.role, profile.department_id, ledger.department_id)) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 

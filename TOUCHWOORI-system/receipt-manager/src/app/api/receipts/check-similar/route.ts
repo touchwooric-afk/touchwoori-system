@@ -3,6 +3,12 @@ export const runtime = 'edge';
 import { createServerClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+
+function canAccessDepartment(role: string, userDepartment: string, targetDepartment: string) {
+  return userDepartment === targetDepartment || CROSS_DEPT_ROLES.includes(role);
+}
+
 /**
  * GET /api/receipts/check-similar?amount=N
  *
@@ -17,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     const { data: profile } = await supabase
       .from('users')
-      .select('department_id, status')
+      .select('role, department_id, status')
       .eq('id', authUser.id)
       .single();
 
@@ -28,6 +34,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const amountStr = searchParams.get('amount');
     const ledgerId = searchParams.get('ledgerId');
+    const deptParam = searchParams.get('department_id');
 
     if (!amountStr) {
       return NextResponse.json({ hasSimilar: false });
@@ -40,6 +47,20 @@ export async function GET(request: NextRequest) {
 
     // ledgerId가 있으면 해당 장부에 연동된 영수증만 비교
     if (ledgerId) {
+      const { data: selectedLedger } = await supabase
+        .from('ledgers')
+        .select('department_id')
+        .eq('id', ledgerId)
+        .single();
+
+      if (!selectedLedger) {
+        return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+      }
+
+      if (!canAccessDepartment(profile.role, profile.department_id, selectedLedger.department_id)) {
+        return NextResponse.json({ error: '해당 장부에 접근할 수 없습니다' }, { status: 403 });
+      }
+
       const { data: entries } = await supabase
         .from('ledger_entries')
         .select('receipt_id')
@@ -65,10 +86,14 @@ export async function GET(request: NextRequest) {
     }
 
     // ledgerId 없으면 부서 전체에서 체크 (기존 동작)
+    const targetDepartment = CROSS_DEPT_ROLES.includes(profile.role) && deptParam
+      ? deptParam
+      : profile.department_id;
+
     const { data } = await supabase
       .from('receipts')
       .select('id, description, date, status, submitted_by, submitter:users!submitted_by(name)')
-      .eq('department_id', profile.department_id)
+      .eq('department_id', targetDepartment)
       .eq('final_amount', amount)
       .eq('status', 'approved')
       .order('date', { ascending: false })

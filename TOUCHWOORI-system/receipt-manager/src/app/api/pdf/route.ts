@@ -5,6 +5,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const PDF_QUERY_PAGE_SIZE = 1000;
 const CARRYOVER_KEYWORD = '이월금';
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+
+function canReadDepartment(role: string, userDepartment: string, targetDepartment: string) {
+  return userDepartment === targetDepartment || CROSS_DEPT_ROLES.includes(role);
+}
 
 async function fetchAllRows<T>(
   buildQuery: () => any,
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { startDate, endDate, ledgerId, title } = body;
+    const { startDate, endDate, ledgerId, title, department_id } = body;
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -58,10 +63,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Teacher는 자기 부서만 접근 가능
-    // ledgerId가 지정된 경우 해당 장부의 부서 확인
     let targetLedgerId = ledgerId;
-    let targetDepartmentId = profile.department_id;
+    let targetDepartmentId = CROSS_DEPT_ROLES.includes(profile.role) && department_id
+      ? department_id
+      : profile.department_id;
     let targetLedgerType: 'main' | 'special' = 'main';
 
     if (targetLedgerId) {
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
       }
 
-      if (profile.role === 'teacher' && ledger.department_id !== profile.department_id) {
+      if (!canReadDepartment(profile.role, profile.department_id, ledger.department_id)) {
         return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
       }
 
@@ -86,7 +91,7 @@ export async function POST(request: NextRequest) {
       const { data: mainLedger } = await supabase
         .from('ledgers')
         .select('id, department_id, type')
-        .eq('department_id', profile.department_id)
+        .eq('department_id', targetDepartmentId)
         .eq('type', 'main')
         .eq('is_active', true)
         .single();

@@ -3,6 +3,18 @@ export const runtime = 'edge';
 import { createServerClient, createServiceClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
 
+const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+const LEDGER_EDITOR_ROLES = ['master', 'sub_master', 'accountant'];
+
+function canReadLedgerDepartment(role: string, userDepartment: string, ledgerDepartment: string) {
+  return userDepartment === ledgerDepartment || CROSS_DEPT_ROLES.includes(role);
+}
+
+function canWriteLedgerDepartment(role: string, userDepartment: string, ledgerDepartment: string) {
+  if (role === 'master' || role === 'sub_master') return true;
+  return role === 'accountant' && userDepartment === ledgerDepartment;
+}
+
 // GET: 장부 항목 목록 조회
 // - type=main 장부: 부서 내 모든 장부 항목 집계 (전체 장부 뷰)
 // - type=special 장부: 해당 장부 항목만 조회
@@ -52,7 +64,7 @@ export async function GET(
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
-    if (ledger.department_id !== profile.department_id) {
+    if (!canReadLedgerDepartment(profile.role, profile.department_id, ledger.department_id)) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
@@ -241,7 +253,7 @@ export async function POST(
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master' && profile.role !== 'accountant' && profile.role !== 'sub_master') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
@@ -255,7 +267,7 @@ export async function POST(
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
-    if (ledger.department_id !== profile.department_id) {
+    if (!canWriteLedgerDepartment(profile.role, profile.department_id, ledger.department_id)) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
@@ -369,6 +381,14 @@ export async function PATCH(
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
     }
 
+    if (isEditor && !canWriteLedgerDepartment(profile.role, profile.department_id, currentLedger.department_id)) {
+      return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
+    }
+
+    if (isTeacher && currentLedger.department_id !== profile.department_id) {
+      return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
+    }
+
     const { data: existingEntry } = await supabase
       .from('ledger_entries')
       .select('ledger_id')
@@ -467,7 +487,7 @@ export async function DELETE(
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master' && profile.role !== 'accountant' && profile.role !== 'sub_master') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
@@ -494,6 +514,10 @@ export async function DELETE(
 
     if (!currentLedger) {
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+    }
+
+    if (!canWriteLedgerDepartment(profile.role, profile.department_id, currentLedger.department_id)) {
+      return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
     const { data: existingEntries } = await supabase

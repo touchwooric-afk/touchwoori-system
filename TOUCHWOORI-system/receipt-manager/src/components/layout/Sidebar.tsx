@@ -63,7 +63,8 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
   const isAdminViewer = role === 'admin_viewer';
   const isTeacher    = role === 'teacher';
   const isReadOnly   = isAuditor || isOverseer || isAdminViewer; // 쓰기 권한 없는 열람 역할
-  const canWrite     = isMaster || isAccountant; // 재정 쓰기 권한
+  const canWrite     = isMaster || isSubMaster || isAccountant; // 장부 쓰기 권한
+  const canManageReceipts = isMaster || isAccountant;
   const canCheckAttendance = isMaster || isSubMaster || isAccountant || isTeacher;
   const canManageAttendance = isMaster || isSubMaster || isAccountant;
 
@@ -112,7 +113,7 @@ function getNavGroups(role: Role, pendingCount?: number, pendingUserCount?: numb
       items: [
         { label: '영수증 제출', href: '/receipts/upload', icon: Upload },
         { label: '내 제출 내역', href: '/receipts/my', icon: ClipboardList, badge: rejectedCount },
-        ...(canWrite
+        ...(canManageReceipts
           ? [
               { label: '미승인 영수증', href: '/receipts/pending', icon: ClipboardList, badge: pendingCount },
               { label: '지출증빙 관리', href: '/receipts/evidence', icon: FileText },

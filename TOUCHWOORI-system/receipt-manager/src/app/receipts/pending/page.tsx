@@ -155,7 +155,8 @@ export default function PendingReceiptsPage() {
     // 이미 연동된 장부 항목이 있는지 확인하면서 동시에 기존 항목 목록도 로드
     setCheckingLink(true);
     try {
-      const ledgerRes = await fetch('/api/ledgers');
+      const ledgerParams = new URLSearchParams({ department_id: receipt.department_id || activeDept });
+      const ledgerRes = await fetch(`/api/ledgers?${ledgerParams}`);
       const ledgerJson = await ledgerRes.json();
       const mainLedger = (ledgerJson.data as { id: string; type: string }[])?.find(l => l.type === 'main');
       if (mainLedger) {
@@ -181,7 +182,8 @@ export default function PendingReceiptsPage() {
   const loadLedgerEntries = async () => {
     setLoadingEntries(true);
     try {
-      const ledgerRes = await fetch('/api/ledgers');
+      const ledgerParams = new URLSearchParams({ department_id: activeDept });
+      const ledgerRes = await fetch(`/api/ledgers?${ledgerParams}`);
       const ledgerJson = await ledgerRes.json();
       if (!ledgerRes.ok) throw new Error(ledgerJson.error);
       const mainLedger = (ledgerJson.data as { id: string; type: string }[]).find(l => l.type === 'main');

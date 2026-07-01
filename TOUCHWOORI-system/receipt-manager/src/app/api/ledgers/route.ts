@@ -5,6 +5,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // 전체 부서 장부 열람 가능한 역할
 const CROSS_DEPT_ROLES = ['master', 'sub_master', 'auditor', 'overseer', 'admin_viewer'];
+const LEDGER_EDITOR_ROLES = ['master', 'sub_master', 'accountant'];
+
+function canWriteLedgerDepartment(role: string, userDepartment: string, ledgerDepartment: string) {
+  if (role === 'master' || role === 'sub_master') return true;
+  return role === 'accountant' && userDepartment === ledgerDepartment;
+}
 
 // GET: 장부 목록 조회
 // - 일반 사용자: 본인 부서만
@@ -80,7 +86,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: 장부 생성 (accountant 또는 master)
+// POST: 장부 생성 (accountant, sub_master 또는 master)
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerClient();
@@ -100,16 +106,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master' && profile.role !== 'accountant') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
     const body = await request.json();
-    const { name, type, description } = body;
+    const { name, type, description, department_id } = body;
 
     if (!name || !type) {
       return NextResponse.json({ error: '이름과 유형은 필수입니다' }, { status: 400 });
     }
+
+    const targetDepartment = (profile.role === 'master' || profile.role === 'sub_master')
+      ? (department_id || profile.department_id)
+      : profile.department_id;
 
     const { data, error } = await supabase
       .from('ledgers')
@@ -117,7 +127,7 @@ export async function POST(request: NextRequest) {
         name,
         type,
         description: description || null,
-        department_id: profile.department_id,
+        department_id: targetDepartment,
         created_by: authUser.id,
       })
       .select()
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: 장부 수정 (accountant 또는 master)
+// PATCH: 장부 수정 (accountant, sub_master 또는 master)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createServerClient();
@@ -154,7 +164,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
-    if (profile.role !== 'master' && profile.role !== 'accountant') {
+    if (!LEDGER_EDITOR_ROLES.includes(profile.role)) {
       return NextResponse.json({ error: '회계 담당자 이상의 권한이 필요합니다' }, { status: 403 });
     }
 
@@ -174,6 +184,10 @@ export async function PATCH(request: NextRequest) {
 
     if (!existingLedger) {
       return NextResponse.json({ error: '장부를 찾을 수 없습니다' }, { status: 404 });
+    }
+
+    if (!canWriteLedgerDepartment(profile.role, profile.department_id, existingLedger.department_id)) {
+      return NextResponse.json({ error: '접근 권한이 없습니다' }, { status: 403 });
     }
 
     // 전체 장부(main)는 비활성화 불가

@@ -46,22 +46,6 @@ export async function POST(
     const now = new Date().toISOString();
     const results: { approved: string[]; failed: string[] } = { approved: [], failed: [] };
 
-    // 부서의 전체 장부(main) 찾기
-    const { data: mainLedger } = await supabase
-      .from('ledgers')
-      .select('id')
-      .eq('department_id', profile.department_id)
-      .eq('type', 'main')
-      .eq('is_active', true)
-      .single();
-
-    if (!mainLedger) {
-      return NextResponse.json(
-        { error: '부서의 전체 장부를 찾을 수 없습니다. 장부를 먼저 생성해주세요.' },
-        { status: 400 }
-      );
-    }
-
     // 배치가 아닌 단건이고 ledgerEntryId가 있으면 기존 항목 연동
     const { ledgerEntryId, entryOverrides, approved_amount } = body as {
       receiptIds?: string[];
@@ -130,6 +114,23 @@ export async function POST(
       }
 
       if (isLinkMode && ledgerEntryId) {
+        const { data: targetEntry } = await supabase
+          .from('ledger_entries')
+          .select('id, ledgers!inner(department_id)')
+          .eq('id', ledgerEntryId)
+          .single();
+
+        const entryLedgerRaw = targetEntry?.ledgers;
+        const entryLedger = Array.isArray(entryLedgerRaw) ? entryLedgerRaw[0] : entryLedgerRaw;
+        if (!targetEntry || entryLedger?.department_id !== receipt.department_id) {
+          await supabase
+            .from('receipts')
+            .update({ status: 'pending', reviewed_by: null, reviewed_at: null, updated_at: now })
+            .eq('id', receiptId);
+          results.failed.push(receiptId);
+          continue;
+        }
+
         // 기존 장부 항목에 영수증 연동
         const { error: linkError } = await supabase
           .from('ledger_entries')
@@ -145,6 +146,24 @@ export async function POST(
           continue;
         }
       } else {
+        // 영수증 부서의 전체 장부(main) 찾기
+        const { data: mainLedger } = await supabase
+          .from('ledgers')
+          .select('id')
+          .eq('department_id', receipt.department_id)
+          .eq('type', 'main')
+          .eq('is_active', true)
+          .single();
+
+        if (!mainLedger) {
+          await supabase
+            .from('receipts')
+            .update({ status: 'pending', reviewed_by: null, reviewed_at: null, updated_at: now })
+            .eq('id', receiptId);
+          results.failed.push(receiptId);
+          continue;
+        }
+
         // 새 장부 항목 생성 (approved_amount 또는 entryOverrides로 금액 결정)
         const effectiveAmount = approved_amount !== undefined ? approved_amount : receipt.final_amount;
         const cat = entryOverrides?.category_id
