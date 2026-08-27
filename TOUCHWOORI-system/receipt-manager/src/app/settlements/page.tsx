@@ -13,7 +13,7 @@ import DatePicker from '@/components/ui/DatePicker';
 import EmptyState from '@/components/ui/EmptyState';
 import { CardSkeleton } from '@/components/ui/Skeleton';
 import { formatCurrency, formatDateShort, today } from '@/lib/format';
-import { FileText, Download, Eye, FileX } from 'lucide-react';
+import { FileText, Download, Eye, FileX, CalendarDays } from 'lucide-react';
 import type { Ledger } from '@/types';
 
 // 전반기(12월~4월) / 후반기(5월~11월) 날짜 계산
@@ -111,6 +111,7 @@ export default function SettlementsPage() {
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
+  const [monthlyPlanLoading, setMonthlyPlanLoading] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
 
   // Fetch ledgers
@@ -602,6 +603,49 @@ export default function SettlementsPage() {
     }
   };
 
+  const handleMonthlyPlanDownload = async () => {
+    if (!pdfData) return;
+
+    if (selectedSettlement !== '__monthly__') {
+      toast.error('월별 결산에서만 계획서를 만들 수 있습니다');
+      return;
+    }
+
+    if (activeDept !== '고등부') {
+      toast.error('현재는 터치우리 고등부 계획서 양식만 지원합니다');
+      return;
+    }
+
+    setMonthlyPlanLoading(true);
+    try {
+      const { generateMonthlyPlanHwpX } = await import('@/lib/monthlyPlanHwpx');
+      const result = await generateMonthlyPlanHwpX({
+        settlementYear: monthlyYear,
+        settlementMonth: monthlyMonth,
+        carryoverBalance: pdfData.carryoverBalance,
+        totalIncome: pdfData.totalIncome,
+        totalExpense: pdfData.totalExpense,
+        endingBalance: pdfData.endingBalance,
+        incomeSummary: pdfData.incomeSummary,
+        expenseSummary: pdfData.expenseSummary,
+      });
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`${result.planYear}년 ${result.planMonth}월 계획서를 다운로드했습니다`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '계획서 생성에 실패했습니다');
+    } finally {
+      setMonthlyPlanLoading(false);
+    }
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -740,7 +784,7 @@ export default function SettlementsPage() {
                 <Eye className="h-4 w-4" />
                 결산 조회
               </Button>
-              {pdfData && (pdfData.expenseItems.length > 0 || pdfData.incomeItems.length > 0) && (
+              {pdfData && (
                 <>
                   <Button
                     variant="secondary"
@@ -758,9 +802,25 @@ export default function SettlementsPage() {
                     <Download className="h-4 w-4" />
                     PDF 다운로드
                   </Button>
+                  {selectedSettlement === '__monthly__' && activeDept === '고등부' && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleMonthlyPlanDownload}
+                      loading={monthlyPlanLoading}
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      다음 달 계획서 다운로드
+                    </Button>
+                  )}
                 </>
               )}
             </div>
+
+            {selectedSettlement === '__monthly__' && activeDept === '고등부' && (
+              <p className="text-xs leading-5 text-gray-500">
+                {monthlyYear}년 {monthlyMonth}월 결산을 기준으로 {monthlyMonth === 12 ? monthlyYear + 1 : monthlyYear}년 {monthlyMonth === 12 ? 1 : monthlyMonth + 1}월 계획서와 {monthlyMonth}월 재정보고를 만듭니다. 다음 달 행사·예산 항목은 제공된 기본 양식의 내용을 보존합니다.
+              </p>
+            )}
           </div>
         )}
 

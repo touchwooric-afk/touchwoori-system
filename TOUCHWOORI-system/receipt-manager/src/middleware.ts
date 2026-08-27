@@ -33,6 +33,7 @@ const ATTENDANCE_MANAGE_PATHS = ['/attendance/roster'];
 
 // 출석 체크: 활성 교사 및 운영 담당자 가능
 const ATTENDANCE_CHECK_PATHS = ['/attendance'];
+const PROTECTED_TEMPLATE_PATHS = ['/templates/touchwoori-high-monthly-plan.hwpx'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -41,7 +42,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
-    pathname.includes('.') // 정적 파일 (favicon 등)
+    (pathname.includes('.') && !PROTECTED_TEMPLATE_PATHS.includes(pathname)) // 정적 파일 (favicon 등)
   ) {
     return NextResponse.next();
   }
