@@ -50,6 +50,10 @@ function formatAmount(amount: number) {
   return Math.round(amount).toLocaleString('ko-KR');
 }
 
+function truncateToThousands(amount: number) {
+  return Math.trunc(amount / 1000) * 1000;
+}
+
 function replaceFirstTextNode(xml: string, source: string, target: string) {
   const pattern = new RegExp(
     `(<hp:t(?:\\s[^>]*)?>)${escapeRegex(escapeXml(source))}(</hp:t>)`
@@ -264,7 +268,7 @@ export function buildMonthlyPlanSectionXml(input: MonthlyPlanHwpXInput, sectionX
   updated = replaceFirstTextNode(
     updated,
     '잔액: 1,835,000',
-    `잔액: ${formatAmount(input.endingBalance)}`
+    `잔액: ${formatAmount(truncateToThousands(input.endingBalance))}`
   );
   updated = replaceFirstTextNode(
     updated,
